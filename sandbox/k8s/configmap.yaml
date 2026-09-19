@@ -1,0 +1,11 @@
+# The bad_config chaos scenario mutates DB_HOST here (e.g. to the typo
+# "cloudsql-primry"). Reverting this file to DB_HOST=cloudsql-primary and
+# re-applying it is exactly the fix AutoOps proposes for that scenario.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: autoops-sandbox
+data:
+  DB_HOST: "cloudsql-primary"
+  FEATURE_X_FLAG: "true"

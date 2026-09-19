@@ -1,0 +1,41 @@
+{
+  "scenario": "oom_leak",
+  "alert_summary": "worker service: pod restart count spiking, memory usage saturating container limit",
+  "logs": [
+    {"timestamp": "2026-10-14T09:40:00Z", "service": "worker", "level": "INFO", "message": "worker starting, image=worker:v3.0-cache-experiment"},
+    {"timestamp": "2026-10-14T09:44:00Z", "service": "worker", "level": "WARN", "message": "in-memory response cache size: 480MB (no eviction policy configured)"},
+    {"timestamp": "2026-10-14T09:48:00Z", "service": "worker", "level": "WARN", "message": "in-memory response cache size: 910MB (no eviction policy configured)"},
+    {"timestamp": "2026-10-14T09:51:10Z", "service": "worker", "level": "ERROR", "message": "container killed: OOMKilled (limit 1Gi)"},
+    {"timestamp": "2026-10-14T09:51:12Z", "service": "worker", "level": "INFO", "message": "worker restarting, image=worker:v3.0-cache-experiment"},
+    {"timestamp": "2026-10-14T09:58:40Z", "service": "worker", "level": "ERROR", "message": "container killed: OOMKilled (limit 1Gi)"}
+  ],
+  "metrics": [
+    {"name": "memory_usage_bytes", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T09:40:00Z", "value": 180000000},
+      {"timestamp": "2026-10-14T09:45:00Z", "value": 520000000},
+      {"timestamp": "2026-10-14T09:50:00Z", "value": 980000000},
+      {"timestamp": "2026-10-14T09:51:00Z", "value": 1073741824}
+    ]},
+    {"name": "pod_restart_count", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T09:40:00Z", "value": 0},
+      {"timestamp": "2026-10-14T09:51:00Z", "value": 1},
+      {"timestamp": "2026-10-14T09:59:00Z", "value": 2}
+    ]}
+  ],
+  "deploys": [
+    {"service": "worker", "image_tag": "worker:v3.0-cache-experiment", "timestamp": "2026-10-14T09:39:30Z", "author": "sam", "commit_message": "perf: cache upstream responses in memory to cut latency"}
+  ],
+  "k8s_events": [
+    {"reason": "OOMKilling", "message": "Memory cgroup out of memory: Killed process worker (main)", "timestamp": "2026-10-14T09:51:10Z", "object": "worker-6b2a-fghij"},
+    {"reason": "BackOff", "message": "Back-off restarting failed container", "timestamp": "2026-10-14T09:58:45Z", "object": "worker-6b2a-fghij"}
+  ],
+  "expected": {
+    "root_cause_type": "oom_leak",
+    "root_cause": "The v3.0-cache-experiment deploy added an unbounded in-memory response cache with no eviction policy. Memory grows linearly from 180MB to the 1Gi container limit within ~11 minutes, triggering repeated OOMKilled events.",
+    "confidence": 0.9,
+    "fix_action": "rollback_deployment",
+    "fix_target": "deployment/worker",
+    "fix_description": "Roll worker back to the pre-cache image while the caching change gets an eviction policy and a memory limit bump reviewed separately.",
+    "risk": "low"
+  }
+}

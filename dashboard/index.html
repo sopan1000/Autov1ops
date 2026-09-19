@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AutoOps - Incident Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🤖 AutoOps</h1>
+      <div class="sub">AI on-call engineer — live incident feed</div>
+    </div>
+    <div class="sub" id="conn-status">connecting…</div>
+  </header>
+
+  <main>
+    <div class="stat-row" id="stats"></div>
+
+    <div class="trigger-bar" id="triggers">
+      <span class="sub" style="align-self:center;">Trigger a scenario:</span>
+    </div>
+
+    <div id="incidents"><div class="empty">Loading incidents…</div></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

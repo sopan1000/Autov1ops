@@ -1,0 +1,28 @@
+# `docker-compose up` gets you the full working demo with ZERO GCP
+# dependencies: agent runs with MOCK_TOOLS=true (fixture data, heuristic
+# diagnosis instead of a live Gemini call) and STORE_BACKEND=local (a JSON
+# file instead of Firestore). Flip those env vars once you're ready to
+# point this at real GCP - see README.md "Going to real GCP".
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      MOCK_TOOLS: "true"
+      STORE_BACKEND: "local"
+      USE_REAL_GEMINI: "false"
+      LOCAL_DB_PATH: "agent/data/db.json"
+    volumes:
+      - ./agent/data:/app/agent/data
+
+  dashboard:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+    depends_on:
+      - agent

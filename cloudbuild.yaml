@@ -1,0 +1,31 @@
+# Builds and deploys the agent to Cloud Run. Trigger manually with:
+#   gcloud builds submit --config cloudbuild.yaml .
+# or wire it to a GitHub push trigger for CI/CD (also what the Executor
+# agent calls, in the real-GCP config, to apply certain remediations).
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-f"
+      - "agent/Dockerfile"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/autoops-agent:$SHORT_SHA"
+      - "."
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/autoops-agent:$SHORT_SHA"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "autoops-agent"
+      - "--image=gcr.io/$PROJECT_ID/autoops-agent:$SHORT_SHA"
+      - "--region=us-central1"
+      - "--platform=managed"
+      - "--service-account=autoops-agent@$PROJECT_ID.iam.gserviceaccount.com"
+      - "--set-env-vars=MOCK_TOOLS=false,STORE_BACKEND=firestore,USE_REAL_GEMINI=true,GCP_PROJECT=$PROJECT_ID"
+
+images:
+  - "gcr.io/$PROJECT_ID/autoops-agent:$SHORT_SHA"

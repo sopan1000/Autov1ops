@@ -1,0 +1,43 @@
+{
+  "scenario": "bad_deploy",
+  "alert_summary": "worker service: 5xx-equivalent job failure rate at 92% over the last 3 minutes",
+  "logs": [
+    {"timestamp": "2026-10-14T02:11:02Z", "service": "worker", "level": "INFO", "message": "worker starting, image=worker:v2.3-broken"},
+    {"timestamp": "2026-10-14T02:11:05Z", "service": "worker", "level": "ERROR", "message": "Unhandled exception processing job job_8841: KeyError: 'FEATURE_X_FLAG'"},
+    {"timestamp": "2026-10-14T02:11:05Z", "service": "worker", "level": "ERROR", "message": "Traceback (most recent call last): File \"handlers.py\", line 47, in process_job -> flag = config['FEATURE_X_FLAG']"},
+    {"timestamp": "2026-10-14T02:11:20Z", "service": "worker", "level": "ERROR", "message": "Unhandled exception processing job job_8842: KeyError: 'FEATURE_X_FLAG'"},
+    {"timestamp": "2026-10-14T02:11:40Z", "service": "worker", "level": "WARN", "message": "container restarted 3 times in the last 2 minutes"},
+    {"timestamp": "2026-10-14T02:12:00Z", "service": "worker", "level": "ERROR", "message": "Unhandled exception processing job job_8850: KeyError: 'FEATURE_X_FLAG'"},
+    {"timestamp": "2026-10-14T02:03:00Z", "service": "worker", "level": "INFO", "message": "worker healthy, image=worker:v2.2, job success rate 99.4%"}
+  ],
+  "metrics": [
+    {"name": "job_failure_rate", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T02:00:00Z", "value": 0.4},
+      {"timestamp": "2026-10-14T02:05:00Z", "value": 0.6},
+      {"timestamp": "2026-10-14T02:10:00Z", "value": 88.0},
+      {"timestamp": "2026-10-14T02:12:00Z", "value": 92.1}
+    ]},
+    {"name": "pod_restart_count", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T02:00:00Z", "value": 0},
+      {"timestamp": "2026-10-14T02:11:00Z", "value": 4},
+      {"timestamp": "2026-10-14T02:12:00Z", "value": 7}
+    ]}
+  ],
+  "deploys": [
+    {"service": "worker", "image_tag": "worker:v2.3-broken", "timestamp": "2026-10-14T02:10:48Z", "author": "priya", "commit_message": "feat: gate new retry logic behind FEATURE_X_FLAG"},
+    {"service": "worker", "image_tag": "worker:v2.2", "timestamp": "2026-10-11T15:22:00Z", "author": "dev", "commit_message": "fix: tune backoff timing"}
+  ],
+  "k8s_events": [
+    {"reason": "CrashLoopBackOff", "message": "Back-off restarting failed container worker in pod worker-7d9f-abcde", "timestamp": "2026-10-14T02:11:40Z", "object": "worker-7d9f-abcde"},
+    {"reason": "Unhealthy", "message": "Readiness probe failed: job success rate below threshold", "timestamp": "2026-10-14T02:11:50Z", "object": "worker-7d9f-abcde"}
+  ],
+  "expected": {
+    "root_cause_type": "bad_deploy",
+    "root_cause": "The deploy of worker:v2.3-broken at 02:10:48 UTC references a config key FEATURE_X_FLAG that was never added to the ConfigMap, causing every job handler invocation to raise KeyError and the pod to crash-loop.",
+    "confidence": 0.93,
+    "fix_action": "rollback_deployment",
+    "fix_target": "deployment/worker",
+    "fix_description": "Roll worker back to the last known-good image (v2.2), which does not reference FEATURE_X_FLAG.",
+    "risk": "low"
+  }
+}

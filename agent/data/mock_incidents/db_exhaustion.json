@@ -1,0 +1,40 @@
+{
+  "scenario": "db_exhaustion",
+  "alert_summary": "api service: error rate 61% over the last 4 minutes, majority 500s on /orders and /users",
+  "logs": [
+    {"timestamp": "2026-10-14T14:20:00Z", "service": "worker", "level": "INFO", "message": "worker starting, image=worker:v2.5-batch-jobs"},
+    {"timestamp": "2026-10-14T14:24:00Z", "service": "worker", "level": "WARN", "message": "db connection opened for batch job (connection not returned to pool on completion)"},
+    {"timestamp": "2026-10-14T14:26:00Z", "service": "worker", "level": "WARN", "message": "db connection opened for batch job (connection not returned to pool on completion)"},
+    {"timestamp": "2026-10-14T14:29:00Z", "service": "api", "level": "ERROR", "message": "FATAL: remaining connection slots are reserved for non-replication superuser connections"},
+    {"timestamp": "2026-10-14T14:29:05Z", "service": "api", "level": "ERROR", "message": "500 Internal Server Error on POST /orders: could not obtain connection from pool within 5000ms"},
+    {"timestamp": "2026-10-14T14:29:30Z", "service": "api", "level": "ERROR", "message": "500 Internal Server Error on GET /users/42: could not obtain connection from pool within 5000ms"}
+  ],
+  "metrics": [
+    {"name": "db_active_connections", "resource": "cloudsql-primary", "points": [
+      {"timestamp": "2026-10-14T14:15:00Z", "value": 12},
+      {"timestamp": "2026-10-14T14:22:00Z", "value": 44},
+      {"timestamp": "2026-10-14T14:27:00Z", "value": 97},
+      {"timestamp": "2026-10-14T14:29:00Z", "value": 100}
+    ]},
+    {"name": "api_error_rate", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T14:20:00Z", "value": 0.5},
+      {"timestamp": "2026-10-14T14:28:00Z", "value": 40.0},
+      {"timestamp": "2026-10-14T14:29:30Z", "value": 61.2}
+    ]}
+  ],
+  "deploys": [
+    {"service": "worker", "image_tag": "worker:v2.5-batch-jobs", "timestamp": "2026-10-14T14:19:40Z", "author": "arun", "commit_message": "feat: add nightly batch reconciliation job"}
+  ],
+  "k8s_events": [
+    {"reason": "Unhealthy", "message": "Readiness probe failed for api: db connectivity check timed out", "timestamp": "2026-10-14T14:29:10Z", "object": "api-4f1c-klmno"}
+  ],
+  "expected": {
+    "root_cause_type": "db_exhaustion",
+    "root_cause": "worker:v2.5-batch-jobs opens a DB connection per batch job but never returns it to the pool. Active connections climbed from 12 to the Cloud SQL max of 100 within 7 minutes, starving the api service of connections and causing its 500s.",
+    "confidence": 0.88,
+    "fix_action": "rollback_deployment",
+    "fix_target": "deployment/worker",
+    "fix_description": "Roll worker back to the pre-batch-job image to stop the connection leak, then restart api pods to clear the stale connections already held.",
+    "risk": "medium"
+  }
+}

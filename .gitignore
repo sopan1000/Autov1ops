@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+agent/data/db.json
+.terraform/
+*.tfstate
+*.tfstate.backup
+node_modules/
+.DS_Store

@@ -1,0 +1,33 @@
+{
+  "scenario": "bad_config",
+  "alert_summary": "api service: 100% of requests failing at the database layer since 18:05 UTC",
+  "logs": [
+    {"timestamp": "2026-10-14T18:04:30Z", "service": "api", "level": "INFO", "message": "ConfigMap 'api-config' updated: DB_HOST changed"},
+    {"timestamp": "2026-10-14T18:05:00Z", "service": "api", "level": "INFO", "message": "api pods rolling restart triggered by ConfigMap change"},
+    {"timestamp": "2026-10-14T18:05:20Z", "service": "api", "level": "ERROR", "message": "could not translate host name \"cloudsql-primry\" to address: Name or service not known"},
+    {"timestamp": "2026-10-14T18:05:22Z", "service": "api", "level": "ERROR", "message": "500 Internal Server Error on GET /health: database unreachable"},
+    {"timestamp": "2026-10-14T18:05:40Z", "service": "api", "level": "ERROR", "message": "could not translate host name \"cloudsql-primry\" to address: Name or service not known"}
+  ],
+  "metrics": [
+    {"name": "api_error_rate", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T18:03:00Z", "value": 0.2},
+      {"timestamp": "2026-10-14T18:05:20Z", "value": 97.0},
+      {"timestamp": "2026-10-14T18:06:00Z", "value": 100.0}
+    ]}
+  ],
+  "deploys": [
+    {"service": "api", "image_tag": "api:v4.1 (no image change, config-only)", "timestamp": "2026-10-14T18:04:30Z", "author": "chen", "commit_message": "chore: update DB_HOST for read-replica migration (typo: cloudsql-primry)"}
+  ],
+  "k8s_events": [
+    {"reason": "Unhealthy", "message": "Readiness probe failed: /health returned 500", "timestamp": "2026-10-14T18:05:25Z", "object": "api-9a3e-pqrst"}
+  ],
+  "expected": {
+    "root_cause_type": "bad_config",
+    "root_cause": "The 18:04:30 ConfigMap update set DB_HOST to 'cloudsql-primry' (typo, missing 'a') instead of 'cloudsql-primary'. Every api pod restarted into this broken config and can no longer resolve the database host.",
+    "confidence": 0.96,
+    "fix_action": "revert_config",
+    "fix_target": "sandbox/k8s/configmap.yaml",
+    "fix_description": "Revert the api-config ConfigMap's DB_HOST value to 'cloudsql-primary' and let the readiness probe trigger a fresh rollout.",
+    "risk": "low"
+  }
+}
