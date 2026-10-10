@@ -14,7 +14,7 @@ services:
       STORE_BACKEND: "local"
       USE_REAL_GEMINI: "${USE_REAL_GEMINI:-false}"
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
-      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.5-flash}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.8-flash}"
       AUTO_REMEDIATE: "${AUTO_REMEDIATE:-false}"
       LOCAL_DB_PATH: "agent/data/db.json"
       CORS_ORIGINS: "http://localhost:3000"

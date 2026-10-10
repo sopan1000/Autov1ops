@@ -150,3 +150,32 @@ def test_auto_remediation_policy(monkeypatch):
     incident = orchestrator.handle_alert("cert_expiry", model=ScriptedGemini())
     assert incident.status.value == "resolved"
     assert any(t.action == "auto_approved" for t in incident.trace)
+
+
+class SlowGemini(ScriptedGemini):
+    async def generate_content_async(self, llm_request, stream=False):
+        import asyncio
+        await asyncio.sleep(5)
+        async for r in super().generate_content_async(llm_request, stream):
+            yield r
+
+
+def test_slow_gemini_times_out_and_falls_back(monkeypatch):
+    from agent import adk_pipeline
+    monkeypatch.setattr(adk_pipeline, "AGENT_TIMEOUT_SECONDS", 0.5)
+    incident = orchestrator.handle_alert("bad_deploy", model=SlowGemini())
+    fallback = [t.detail for t in incident.trace if t.action == "gemini_unavailable"]
+    assert fallback and "TimeoutError" in fallback[0]
+    assert incident.ai_engine.startswith("offline heuristic")
+    assert incident.proposed_fix.fix_id == "rollback_worker"
+
+
+def test_repeated_runs_share_one_event_loop():
+    from agent import adk_pipeline
+    model = ScriptedGemini()
+    for _ in range(5):
+        incident = orchestrator.handle_alert("cert_expiry", model=model)
+        assert incident.ai_engine == "test model via ADK"
+    loops = [t for t in __import__("threading").enumerate() if t.name == "autoops-adk-loop"]
+    assert len(loops) == 1
+    assert adk_pipeline._agent_loop().is_running()

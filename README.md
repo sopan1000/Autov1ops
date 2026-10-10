@@ -110,7 +110,7 @@ The main switches:
 |---|---|---|
 | `USE_REAL_GEMINI` | `false` | Gemini agents via ADK; otherwise the offline engine |
 | `GOOGLE_API_KEY` | – | AI Studio key; leave unset on GCP to use Vertex AI |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | model for all agents |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | model for all agents |
 | `MOCK_TOOLS` | `true` | fixture evidence; `false` reads the live cluster |
 | `STORE_BACKEND` | `local` | `firestore` on Cloud Run |
 | `AUTO_REMEDIATE` | `false` | confidence-gated auto-apply of low-risk fixes |
