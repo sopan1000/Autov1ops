@@ -108,6 +108,7 @@ def test_adk_pipeline_end_to_end():
     # State passed between agents: the diagnoser saw the investigator's findings.
     diagnoser_prompt = next(s for s in model.seen if "Diagnoser agent" in s)
     assert "certs/2025-q4" in diagnoser_prompt
+    assert any(t.action == "gemini_calls" and t.detail.startswith("4 ") for t in incident.trace)
     planner_prompt = next(s for s in model.seen if "Remediation Planner agent" in s)
     assert "tls_cert_expiry" in planner_prompt and "rollback_api" in planner_prompt
 
@@ -179,3 +180,49 @@ def test_repeated_runs_share_one_event_loop():
     loops = [t for t in __import__("threading").enumerate() if t.name == "autoops-adk-loop"]
     assert len(loops) == 1
     assert adk_pipeline._agent_loop().is_running()
+
+
+class RunawayGemini(ScriptedGemini):
+    """Keeps requesting tools forever, as a misbehaving model might."""
+    async def generate_content_async(self, llm_request, stream=False):
+        self.seen.append("call")
+        yield LlmResponse(content=types.Content(role="model", parts=[
+            types.Part(function_call=types.FunctionCall(name="get_cluster_events", args={}))]))
+
+
+def test_call_cap_stops_runaway_model():
+    model = RunawayGemini()
+    incident = orchestrator.handle_alert("bad_deploy", model=model)
+    assert any(t.action == "gemini_unavailable" for t in incident.trace)
+    assert incident.ai_engine.startswith("offline heuristic")
+    from agent import adk_pipeline
+    assert len(model.seen) <= adk_pipeline.MAX_CALLS_PER_INCIDENT
+
+
+def test_rate_limiter_waits_when_minute_quota_used(monkeypatch):
+    import asyncio
+    from agent import adk_pipeline
+    clock = {"t": 1000.0}
+    slept = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+        clock["t"] += seconds
+
+    monkeypatch.setattr(adk_pipeline, "GEMINI_RPM", 2)
+    monkeypatch.setattr(adk_pipeline.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(adk_pipeline.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(adk_pipeline, "_rate_lock", None)
+    adk_pipeline._call_times.clear()
+
+    class Ctx:
+        state = {}
+
+    async def three_calls():
+        for _ in range(3):
+            await adk_pipeline._before_model(Ctx(), None)
+
+    asyncio.run(three_calls())
+    assert len(slept) == 1 and 59 < slept[0] <= 60.2   # third call waited for the window
+    assert Ctx.state["gemini_calls"] == 3
+    adk_pipeline._call_times.clear()

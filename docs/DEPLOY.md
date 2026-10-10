@@ -31,13 +31,25 @@ gcloud auth application-default login
 GCP_PROJECT=your-project GCP_LOCATION=us-central1 python scripts/gemini_smoke_test.py
 ```
 
-You want `5/5 scenarios passed`. For each scenario it prints the root cause,
+You want `5/5 scenarios passed`. Each incident should take roughly 4 Gemini
+requests (the output shows the count). To save quota while iterating, run
+just the scenarios you care about: `python scripts/gemini_smoke_test.py cert_expiry`. For each scenario it prints the root cause,
 the chosen fix, Gemini's justification and which tools the investigator called.
 
 - **`fell back to offline engine: ... 404 NOT_FOUND ... model`**: that model
   isn't available to your account or region. The error message usually names
   the replacement; set `GEMINI_MODEL` to it (or to one listed in AI Studio /
   Vertex AI Studio). On Vertex AI, also try `GCP_LOCATION=global`.
+- **`429 RESOURCE_EXHAUSTED`**: free-tier quota. Check your limits at
+  https://aistudio.google.com/rate-limit. For a per-minute limit, set
+  `GEMINI_RPM` to it (AutoOps then spaces requests out); for the daily limit,
+  wait for the reset at midnight Pacific time. **For demo day and judging,
+  don't rely on the free tier:** enable billing on the key's project (each
+  incident costs a tiny fraction of a cent) or use Vertex AI on Cloud Run with
+  your hackathon credits, which uses the project's paid quota.
+- **Incidents are slow**: they should take well under a minute. Keep
+  `GEMINI_THINKING_LEVEL=low` (the default). If an error mentions thinking,
+  set it to an empty string.
 - **`PermissionDenied`**: enable the Vertex AI API on the project and make sure
   your account has *Vertex AI User*.
 - **A scenario picks a different fix**: read the justification. If the

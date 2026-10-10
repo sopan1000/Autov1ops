@@ -16,6 +16,8 @@ services:
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.8-flash}"
       AUTO_REMEDIATE: "${AUTO_REMEDIATE:-false}"
+      GEMINI_RPM: "${GEMINI_RPM:-0}"
+      GEMINI_THINKING_LEVEL: "${GEMINI_THINKING_LEVEL:-low}"
       LOCAL_DB_PATH: "agent/data/db.json"
       CORS_ORIGINS: "http://localhost:3000"
     volumes:
