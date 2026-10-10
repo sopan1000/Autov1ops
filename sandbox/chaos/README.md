@@ -18,7 +18,8 @@ export AGENT_URL=http://localhost:8000   # or your Cloud Run URL
 ./oom_leak.sh
 ./db_exhaustion.sh
 ./bad_config.sh
+./cert_expiry.sh   # unseen incident type: fixture-only, shows what Gemini adds
 ```
 
-Run `../../scripts/demo.sh` to fire all four in sequence with pauses,
+Run `../../scripts/demo.sh` to fire all five in sequence with pauses,
 scripted for a live walkthrough.

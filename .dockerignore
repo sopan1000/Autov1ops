@@ -1,0 +1,11 @@
+.git
+.github
+**/__pycache__
+**/*.pyc
+.pytest_cache
+agent/data/db.json
+infra
+sandbox
+docs
+tests
+*.zip

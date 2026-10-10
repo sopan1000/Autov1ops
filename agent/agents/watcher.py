@@ -11,11 +11,13 @@ SCENARIO_ALERTS = {
     "oom_leak": "worker service: pod restart count spiking, memory usage near container limit",
     "db_exhaustion": "api service: elevated error rate, DB connection pool near capacity",
     "bad_config": "api service: requests failing at the database layer since the last config change",
+    # Not one of the offline engine's known signatures - shows what Gemini adds.
+    "cert_expiry": "api service: checkout error rate 74%, mostly 502s on POST /checkout",
 }
 
 
-def watch(scenario: str, alert_summary: str = "") -> Incident:
+def watch(scenario: str, alert_summary: str = "", source_event_id: str | None = None) -> Incident:
     summary = alert_summary or SCENARIO_ALERTS.get(scenario, f"Unrecognized scenario '{scenario}'")
-    incident = Incident(scenario=scenario, alert_summary=summary, status=IncidentStatus.DETECTED)
+    incident = Incident(scenario=scenario, alert_summary=summary, source_event_id=source_event_id, status=IncidentStatus.DETECTED)
     incident.log("watcher", "alert_received", f"Alert received via Pub/Sub: {summary}")
     return incident

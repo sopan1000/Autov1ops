@@ -10,19 +10,24 @@
   <header>
     <div>
       <h1>🤖 AutoOps</h1>
-      <div class="sub">AI on-call engineer — live incident feed</div>
+      <div class="sub">AI on-call engineer · Gemini + Agent Development Kit on Google Cloud</div>
     </div>
-    <div class="sub" id="conn-status">connecting…</div>
+    <div class="header-right">
+      <span id="engine" class="engine">AI: …</span>
+      <span class="sub" id="conn-status">connecting…</span>
+    </div>
   </header>
 
   <main>
     <div class="stat-row" id="stats"></div>
 
     <div class="trigger-bar" id="triggers">
-      <span class="sub" style="align-self:center;">Trigger a scenario:</span>
+      <span class="sub" style="align-self:center;">Break something:</span>
     </div>
 
-    <div id="incidents"><div class="empty">Loading incidents…</div></div>
+    <div id="pending"></div>
+    <div id="empty" class="empty">No incidents yet — trigger a scenario above.</div>
+    <div id="incidents"></div>
   </main>
 
   <script src="config.js"></script>

@@ -1,11 +1,4 @@
-"""
-Shared data models for the AutoOps incident pipeline.
-
-These are the contracts every agent (Watcher, Diagnoser, Remediator,
-Executor, Scribe) reads and writes. Keeping them in one place means the
-dashboard, the storage backend, and the LLM's structured output all agree
-on the same shape.
-"""
+"""Shared, versioned contracts for the AutoOps incident pipeline."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -13,7 +6,7 @@ from enum import Enum
 from typing import List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def now() -> str:
@@ -25,7 +18,9 @@ class IncidentStatus(str, Enum):
     DIAGNOSING = "diagnosing"
     AWAITING_APPROVAL = "awaiting_approval"
     REMEDIATING = "remediating"
+    VERIFYING = "verifying"
     RESOLVED = "resolved"
+    ESCALATED = "escalated"  # no safe automated fix exists; handed to a human
     REJECTED = "rejected"
     FAILED = "failed"
 
@@ -37,11 +32,11 @@ class RiskLevel(str, Enum):
 
 
 class TraceStep(BaseModel):
-    """One line in the agent's visible reasoning trace (shown in the dashboard)."""
+    model_config = ConfigDict(extra="forbid")
     timestamp: str = Field(default_factory=now)
-    agent: str
-    action: str
-    detail: str
+    agent: str = Field(min_length=1, max_length=64)
+    action: str = Field(min_length=1, max_length=128)
+    detail: str = Field(min_length=1, max_length=4000)
 
 
 class LogEntry(BaseModel):
@@ -78,26 +73,43 @@ class K8sEvent(BaseModel):
 
 
 class Diagnosis(BaseModel):
-    root_cause: str
-    root_cause_type: str  # maps to a remediation template, e.g. "bad_deploy"
-    confidence: float
-    evidence: List[str]
-    hypotheses_rejected: List[str] = []
+    root_cause: str = Field(min_length=1, max_length=4000)
+    # Free-form category label (e.g. "bad_deploy", "tls_cert_expiry"). Gemini may
+    # name failure types the offline heuristic has never seen; fix selection is
+    # driven by the remediation planner, not by this label.
+    root_cause_type: str = Field(min_length=1, max_length=64)
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: List[str] = Field(default_factory=list, max_length=20)
+    hypotheses_rejected: List[str] = Field(default_factory=list, max_length=20)
 
 
 class ProposedFix(BaseModel):
-    action: str  # e.g. "rollback_deployment"
+    """A safe remediation intent. `target` is data, never an executable command."""
+    action: str
+    target: str
     description: str
     diff: str
     risk: RiskLevel
     rollback_plan: str
     auto_approvable: bool = False
+    fix_id: str = ""                 # key into remediator.FIX_CATALOG
+    justification: str = ""          # why the planner chose this fix
+    alternatives_rejected: List[str] = Field(default_factory=list)
 
 
 class ResolutionResult(BaseModel):
     success: bool
     detail: str
     health_after: str
+    verification_attempts: int = 0
+    verified_at: Optional[str] = None
+
+
+class QAEntry(BaseModel):
+    question: str
+    answer: str
+    engine: str
+    asked_at: str = Field(default_factory=now)
 
 
 class Runbook(BaseModel):
@@ -115,12 +127,16 @@ class Incident(BaseModel):
     scenario: str
     status: IncidentStatus = IncidentStatus.DETECTED
     alert_summary: str
+    source_event_id: Optional[str] = None
     created_at: str = Field(default_factory=now)
     updated_at: str = Field(default_factory=now)
     diagnosis: Optional[Diagnosis] = None
     proposed_fix: Optional[ProposedFix] = None
     resolution: Optional[ResolutionResult] = None
-    trace: List[TraceStep] = []
+    trace: List[TraceStep] = Field(default_factory=list)
+    ai_engine: str = ""              # which engine diagnosed this incident (shown in the dashboard)
+    postmortem: str = ""
+    qa: List[QAEntry] = Field(default_factory=list)
 
     def log(self, agent: str, action: str, detail: str) -> None:
         self.trace.append(TraceStep(agent=agent, action=action, detail=detail))

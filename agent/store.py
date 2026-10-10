@@ -31,6 +31,9 @@ class IncidentStore:
     def list_incidents(self) -> List[Incident]:
         raise NotImplementedError
 
+    def find_by_source_event_id(self, source_event_id: str) -> Optional[Incident]:
+        raise NotImplementedError
+
     def save_runbook(self, runbook: Runbook) -> None:
         raise NotImplementedError
 
@@ -76,6 +79,13 @@ class LocalJSONStore(IncidentStore):
         incidents = [Incident(**v) for v in data["incidents"].values()]
         return sorted(incidents, key=lambda i: i.created_at, reverse=True)
 
+    def find_by_source_event_id(self, source_event_id: str) -> Optional[Incident]:
+        data = self._read()
+        for raw in data["incidents"].values():
+            if raw.get("source_event_id") == source_event_id:
+                return Incident(**raw)
+        return None
+
     def save_runbook(self, runbook: Runbook) -> None:
         with _LOCK:
             data = self._read()
@@ -112,6 +122,11 @@ class FirestoreStore(IncidentStore):
     def list_incidents(self) -> List[Incident]:
         docs = self.incidents.order_by("created_at", direction="DESCENDING").stream()
         return [Incident(**d.to_dict()) for d in docs]
+
+    def find_by_source_event_id(self, source_event_id: str) -> Optional[Incident]:
+        docs = self.incidents.where("source_event_id", "==", source_event_id).limit(1).stream()
+        doc = next(iter(docs), None)
+        return Incident(**doc.to_dict()) if doc else None
 
     def save_runbook(self, runbook: Runbook) -> None:
         self.runbooks.document(runbook.id).set(json.loads(runbook.model_dump_json()))

@@ -98,48 +98,114 @@ class GitHubDeployHistorySource(DeployHistorySource):
 
 
 class KubectlStateSource(K8sStateSource):
+    """GKE state/remediation using the Kubernetes API and Google ADC.
+
+    This avoids shipping gcloud/kubectl into the production container. The
+    Cloud Run service account authenticates to the GKE API and Kubernetes RBAC
+    restricts it to the AutoOps namespace.
     """
-    Reads live cluster state via kubectl, and applies remediations the same
-    way. Requires the agent's service account to have Workload Identity
-    bound with namespace-scoped RBAC (see infra/terraform/iam.tf) — kept
-    deliberately narrow: this account can only touch autoops-sandbox.
-    """
+    ALLOWED_TARGETS = {"deployment/worker", "deployment/api"}
+
+    def __init__(self):
+        self.namespace = NAMESPACE
+        self._api = None
+
+    def _apps_api(self):
+        if self._api:
+            return self._api
+        from google.auth import default
+        from google.auth.transport.requests import Request
+        from google.cloud import container_v1
+        from kubernetes import client
+
+        credentials, project = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh(Request())
+        project_id = GCP_PROJECT or project
+        container = container_v1.ClusterManagerClient(credentials=credentials)
+        cluster = container.get_cluster(name=f"projects/{project_id}/locations/{os.getenv('GKE_LOCATION', os.getenv('GCP_LOCATION', 'us-central1'))}/clusters/{os.getenv('GKE_CLUSTER', 'autoops-sandbox')}")
+        configuration = client.Configuration()
+        configuration.host = f"https://{cluster.endpoint}"
+        configuration.ssl_ca_cert = "/tmp/autoops-gke-ca.crt"
+        with open(configuration.ssl_ca_cert, "wb") as fh:
+            import base64
+            fh.write(base64.b64decode(cluster.master_auth.cluster_ca_certificate))
+        configuration.api_key = {"authorization": credentials.token}
+        configuration.api_key_prefix = {"authorization": "Bearer"}
+        self._api = client.AppsV1Api(client.ApiClient(configuration))
+        return self._api
+
+    def _core_api(self):
+        from kubernetes import client
+        apps = self._apps_api()
+        return client.CoreV1Api(apps.api_client)
 
     def get_events(self, scenario: str, namespace: str = NAMESPACE) -> List[K8sEvent]:
-        out = subprocess.run(
-            ["kubectl", "get", "events", "-n", namespace, "-o", "json"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if out.returncode != 0:
+        try:
+            events = self._core_api().list_namespaced_event(namespace=namespace).items
+        except Exception:
             return []
-        import json as _json
-        events = []
-        for item in _json.loads(out.stdout).get("items", []):
-            events.append(K8sEvent(
-                reason=item.get("reason", ""),
-                message=item.get("message", ""),
-                timestamp=item.get("lastTimestamp", ""),
-                object=item.get("involvedObject", {}).get("name", ""),
-            ))
-        return events
+        return [K8sEvent(
+            reason=e.reason or "",
+            message=e.message or "",
+            timestamp=(e.last_timestamp or e.event_time or datetime.now(timezone.utc)).isoformat(),
+            object=e.involved_object.name or "",
+        ) for e in events[-100:]]
 
-    def apply_action(self, scenario: str, action: str, diff: str) -> str:
-        # Deliberately an allowlist, not "run whatever the model says": the
-        # Remediator can only ever request one of these four verbs. See
-        # agents/remediator.py for where the allowlist is enforced.
+    def _validate_target(self, target: str) -> str:
+        target = target.strip()
+        if target not in self.ALLOWED_TARGETS:
+            raise ValueError(f"Target '{target}' is not on the remediation allowlist")
+        return target
+
+    def apply_action(self, scenario: str, action: str, target: str) -> str:
+        target = self._validate_target(target)
+        name = target.split("/", 1)[1]
+        api = self._apps_api()
         if action == "rollback_deployment":
-            target = diff.strip()  # e.g. "deployment/worker"
-            cmd = ["kubectl", "rollout", "undo", target, "-n", NAMESPACE]
-        elif action == "restart_pods":
-            cmd = ["kubectl", "rollout", "restart", diff.strip(), "-n", NAMESPACE]
-        elif action == "scale_replicas":
-            cmd = ["kubectl", "scale", diff.strip(), "-n", NAMESPACE]
-        elif action == "revert_config":
-            cmd = ["kubectl", "apply", "-f", diff.strip(), "-n", NAMESPACE]
-        else:
-            raise ValueError(f"Action '{action}' is not on the remediation allowlist")
+            deployment = api.read_namespaced_deployment(name, self.namespace)
+            selector = ",".join(f"{k}={v}" for k, v in (deployment.spec.selector.match_labels or {}).items())
+            replicasets = api.list_namespaced_replica_set(self.namespace, label_selector=selector).items
+            current_revision = int((deployment.metadata.annotations or {}).get("deployment.kubernetes.io/revision", "0"))
+            candidates = []
+            for rs in replicasets:
+                owner = next((o for o in (rs.metadata.owner_references or []) if o.kind == "Deployment" and o.uid == deployment.metadata.uid), None)
+                if not owner:
+                    continue
+                revision = int((rs.metadata.annotations or {}).get("deployment.kubernetes.io/revision", "0"))
+                if revision < current_revision:
+                    candidates.append((revision, rs))
+            if not candidates:
+                raise RuntimeError(f"No previous ReplicaSet found for {target}")
+            previous_revision, previous_rs = max(candidates, key=lambda item: item[0])
+            template = previous_rs.spec.template
+            body = {"spec": {"template": template.to_dict()}}
+            api.patch_namespaced_deployment(name, self.namespace, body)
+            return f"Rolled {target} back to ReplicaSet revision {previous_revision}"
+        if action == "restart_pods":
+            import time
+            body = {"spec": {"template": {"metadata": {"annotations": {"autoops/restarted-at": str(time.time())}}}}}
+            api.patch_namespaced_deployment(name, self.namespace, body)
+            return f"Restart requested for {target}"
+        raise ValueError(f"Action '{action}' is not enabled in production")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise RuntimeError(f"kubectl command failed: {result.stderr}")
-        return result.stdout
+    def verify_health(self, scenario: str, target: str, timeout_seconds: int = 90):
+        target = self._validate_target(target)
+        name = target.split("/", 1)[1]
+        api = self._apps_api()
+        import time
+        deadline = time.time() + timeout_seconds
+        attempts = 0
+        while time.time() < deadline:
+            attempts += 1
+            obj = api.read_namespaced_deployment(name, self.namespace)
+            status = obj.status
+            desired = obj.spec.replicas or 0
+            ready = status.ready_replicas or 0
+            updated = status.updated_replicas or 0
+            unavailable = status.unavailable_replicas or 0
+            healthy = desired > 0 and ready == desired and updated == desired and unavailable == 0
+            detail = f"deployment desired={desired}, ready={ready}, updated={updated}, unavailable={unavailable}"
+            if healthy:
+                return {"healthy": True, "detail": detail, "attempts": attempts}
+            time.sleep(3)
+        return {"healthy": False, "detail": "Timed out waiting for healthy deployment", "attempts": attempts}
