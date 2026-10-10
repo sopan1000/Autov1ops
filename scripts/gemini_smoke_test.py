@@ -8,7 +8,7 @@ Usage (from the repo root), with ONE of:
   gcloud auth application-default login
   GCP_PROJECT=your-project GCP_LOCATION=us-central1 python scripts/gemini_smoke_test.py
 
-Optional: GEMINI_MODEL=gemini-3.8-flash (default), GEMINI_DIAGNOSIS_MODEL=<a Pro model listed in AI Studio>
+Optional: GEMINI_MODEL=gemini-3.5-flash-lite (default), GEMINI_DIAGNOSIS_MODEL=gemini-3.8-flash (stronger diagnosis step)
 
 Run a subset to save quota:  python scripts/gemini_smoke_test.py cert_expiry oom_leak
 
@@ -30,7 +30,7 @@ EXPECTED_FIX = {
     "bad_deploy": "rollback_worker",
     "oom_leak": "rollback_worker",
     "db_exhaustion": "rollback_worker",
-    "bad_config": "restart_api",
+    "bad_config": "restore_api_config",
     "cert_expiry": "rollback_api",  # the unseen incident type
 }
 

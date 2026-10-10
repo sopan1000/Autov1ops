@@ -140,7 +140,7 @@ def test_offline_engine_escalates_unseen_incident():
 
 def test_offline_engine_still_handles_known_scenarios():
     for scenario, fix in [("bad_deploy", "rollback_worker"), ("oom_leak", "rollback_worker"),
-                          ("db_exhaustion", "rollback_worker"), ("bad_config", "restart_api")]:
+                          ("db_exhaustion", "rollback_worker"), ("bad_config", "restore_api_config")]:
         incident = orchestrator.handle_alert(scenario)
         assert incident.proposed_fix.fix_id == fix, scenario
         assert orchestrator.handle_approval(incident.id, True).status.value == "resolved"

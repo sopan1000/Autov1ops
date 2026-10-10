@@ -9,8 +9,9 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# Default Gemini model. gemini-2.5-flash is closed to new API users (Oct 2026).
-DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+# Default Gemini model. Fast, cheap, and passed every scenario in real testing.
+# For a stronger diagnosis step, set GEMINI_DIAGNOSIS_MODEL=gemini-3.8-flash.
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 def now() -> str:

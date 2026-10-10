@@ -59,7 +59,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `bad_deploy` | worker crash-loops | deploy reads a config key that doesn't exist | `rollback_worker` |
 | `oom_leak` | worker OOMKilled repeatedly | new unbounded in-memory cache | `rollback_worker` |
 | `db_exhaustion` | api returns 500s | worker batch job leaks DB connections, starving the api | `rollback_worker` |
-| `bad_config` | api can't reach the DB | `DB_HOST` typo in the ConfigMap | `restart_api` |
+| `bad_config` | api can't reach the DB | `DB_HOST` typo in the ConfigMap | `restore_api_config` (re-apply the config from Git, restart api) |
 | `cert_expiry` | checkout returns 502s | api deploy mounted an expired client certificate | `rollback_api` |
 
 `cert_expiry` is deliberately outside the offline engine's known signatures.
@@ -110,7 +110,7 @@ The main switches:
 |---|---|---|
 | `USE_REAL_GEMINI` | `false` | Gemini agents via ADK; otherwise the offline engine |
 | `GOOGLE_API_KEY` | – | AI Studio key; leave unset on GCP to use Vertex AI |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | model for all agents |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | model for all agents |
 | `MOCK_TOOLS` | `true` | fixture evidence; `false` reads the live cluster |
 | `STORE_BACKEND` | `local` | `firestore` on Cloud Run |
 | `AUTO_REMEDIATE` | `false` | confidence-gated auto-apply of low-risk fixes |

@@ -55,7 +55,7 @@ the chosen fix, Gemini's justification and which tools the investigator called.
 - **A scenario picks a different fix**: read the justification. If the
   reasoning is sound, update `EXPECTED_FIX` in the script; if not, tune the
   prompts in `agent/adk_pipeline.py`. You can also try a stronger diagnosis model:
-  `GEMINI_DIAGNOSIS_MODEL=<a Pro model listed in AI Studio>`.
+  `GEMINI_DIAGNOSIS_MODEL=gemini-3.8-flash`.
 
 ## Fast path: Cloud Run + Gemini + Firestore
 
@@ -78,7 +78,7 @@ gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --ro
 # Build from source and deploy (run from the repo root)
 gcloud run deploy autoops-agent --source . --region $REGION \
   --allow-unauthenticated --min-instances 1 --max-instances 2 --timeout 300 \
-  --set-env-vars "USE_REAL_GEMINI=true,GCP_PROJECT=$PROJECT,GCP_LOCATION=$REGION,GEMINI_MODEL=gemini-3.8-flash,MOCK_TOOLS=true,STORE_BACKEND=firestore"
+  --set-env-vars "USE_REAL_GEMINI=true,GCP_PROJECT=$PROJECT,GCP_LOCATION=$REGION,GEMINI_MODEL=gemini-3.5-flash-lite,MOCK_TOOLS=true,STORE_BACKEND=firestore"
 ```
 
 Open the printed service URL. It redirects to the dashboard at `/ui`, and the
@@ -116,8 +116,9 @@ Only start this after the fast path works and the video is recorded.
 3. Build and push `sandbox/api` and `sandbox/worker` images, update the image
    names in `sandbox/k8s/*.yaml`, then `kubectl apply -f sandbox/k8s/`.
 4. Edit `sandbox/k8s/rbac.yaml` with the agent's service-account email and apply it.
-5. Set `MOCK_TOOLS=false` on the service, plus `GITHUB_REPO` / `GITHUB_TOKEN`
-   for deploy history.
+5. Set `MOCK_TOOLS=false` on the service, plus `GITHUB_REPO` / `GITHUB_TOKEN`.
+   They're used for deploy history and by `restore_api_config`, which re-applies
+   `sandbox/k8s/configmap.yaml` from the `main` branch (`KNOWN_GOOD_CONFIG_REF`).
 6. Create a Cloud Monitoring alert policy whose notification channel publishes
    to the `autoops-incidents` topic, with a `scenario` attribute on the message.
 7. Run a chaos script against the live cluster (for example `sandbox/chaos/bad_deploy.sh`)

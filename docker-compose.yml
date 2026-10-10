@@ -14,7 +14,7 @@ services:
       STORE_BACKEND: "local"
       USE_REAL_GEMINI: "${USE_REAL_GEMINI:-false}"
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
-      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.8-flash}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.5-flash-lite}"
       AUTO_REMEDIATE: "${AUTO_REMEDIATE:-false}"
       GEMINI_RPM: "${GEMINI_RPM:-0}"
       GEMINI_THINKING_LEVEL: "${GEMINI_THINKING_LEVEL:-low}"
