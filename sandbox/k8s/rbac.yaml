@@ -13,6 +13,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "events"]
     verbs: ["get", "list", "watch"]
+  # restore_api_config: only this one ConfigMap can be read or patched
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["api-config"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

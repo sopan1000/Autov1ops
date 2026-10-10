@@ -42,7 +42,7 @@ variable "pubsub_audience" {
 variable "gemini_model" {
   description = "Gemini model used by the ADK agents (pick the newest one available in Vertex AI)"
   type        = string
-  default     = "gemini-3.8-flash"
+  default     = "gemini-3.5-flash-lite"
 }
 
 variable "public_demo" {

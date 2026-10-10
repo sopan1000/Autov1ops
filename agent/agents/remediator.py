@@ -20,7 +20,7 @@ FIX_CATALOG = {
         action="rollback_deployment",
         target="deployment/worker",
         risk=RiskLevel.LOW,
-        description="Roll the worker deployment back to its previous revision.",
+        description="Roll the worker deployment back to its previous revision (image, env vars, mounted secrets). Does not undo edits to a ConfigMap's data.",
         rollback_plan="If health regresses after the rollback, roll forward again and page the on-call engineer.",
         auto_approvable=True,
         when="A recent worker deploy introduced the failure (crash loop, memory leak, connection leak).",
@@ -29,7 +29,7 @@ FIX_CATALOG = {
         action="rollback_deployment",
         target="deployment/api",
         risk=RiskLevel.LOW,
-        description="Roll the api deployment back to its previous revision.",
+        description="Roll the api deployment back to its previous revision (image, env vars, mounted secrets). Does not undo edits to a ConfigMap's data.",
         rollback_plan="If health regresses after the rollback, roll forward again and page the on-call engineer.",
         auto_approvable=True,
         when="A recent api deploy (image, mounted secret or certificate change) introduced the failure.",
@@ -38,10 +38,19 @@ FIX_CATALOG = {
         action="restart_pods",
         target="deployment/api",
         risk=RiskLevel.MEDIUM,
-        description="Restart api pods so they pick up corrected configuration and release stale connections.",
+        description="Restart api pods to clear in-process state such as stuck connections. Pods reload the same config, so a restart alone does not fix a bad config value.",
         rollback_plan="If readiness stays unhealthy, stop automated remediation and inspect the configuration manually.",
         auto_approvable=False,
-        when="The api is holding bad state (stale config, stuck connections) and a restart clears it.",
+        when="The api is holding bad in-memory state (stuck connections) and nothing in its config or image is wrong.",
+    ),
+    "restore_api_config": dict(
+        action="restore_config",
+        target="configmap/api-config",
+        risk=RiskLevel.LOW,
+        description="Restore the api-config ConfigMap to the known-good version in Git, then restart the api to load it.",
+        rollback_plan="If the api is still unhealthy, re-apply the previous ConfigMap values and escalate: the cause is not the config.",
+        auto_approvable=True,
+        when="A ConfigMap value (for example DB_HOST) was changed and the api broke right after.",
     ),
     "restart_worker": dict(
         action="restart_pods",
@@ -68,7 +77,7 @@ OFFLINE_FIX_FOR_TYPE = {
     "bad_deploy": "rollback_worker",
     "oom_leak": "rollback_worker",
     "db_exhaustion": "rollback_worker",
-    "bad_config": "restart_api",
+    "bad_config": "restore_api_config",
 }
 
 
@@ -85,6 +94,8 @@ def _command_preview(action: str, target: str) -> str:
         return f"kubectl rollout undo {target}"
     if action == "restart_pods":
         return f"kubectl rollout restart {target}"
+    if action == "restore_config":
+        return "kubectl apply -f sandbox/k8s/configmap.yaml && kubectl rollout restart deployment/api"
     return "page on-call (no cluster change)"
 
 

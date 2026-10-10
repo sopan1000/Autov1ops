@@ -104,7 +104,18 @@ class KubectlStateSource(K8sStateSource):
     Cloud Run service account authenticates to the GKE API and Kubernetes RBAC
     restricts it to the AutoOps namespace.
     """
-    ALLOWED_TARGETS = {"deployment/worker", "deployment/api"}
+    ALLOWED_TARGETS = {"deployment/worker", "deployment/api", "configmap/api-config"}
+    # Each action may only touch specific targets.
+    ALLOWED_ACTIONS = {
+        "rollback_deployment": {"deployment/worker", "deployment/api"},
+        "restart_pods": {"deployment/worker", "deployment/api"},
+        "restore_config": {"configmap/api-config"},
+    }
+    # A ConfigMap's health is judged by the deployment that consumes it.
+    HEALTH_TARGET = {"configmap/api-config": "deployment/api"}
+    CONFIG_CONSUMER = {"configmap/api-config": "api"}
+    KNOWN_GOOD_CONFIG_PATH = os.getenv("KNOWN_GOOD_CONFIG_PATH", "sandbox/k8s/configmap.yaml")
+    KNOWN_GOOD_CONFIG_REF = os.getenv("KNOWN_GOOD_CONFIG_REF", "main")
 
     def __init__(self):
         self.namespace = NAMESPACE
@@ -157,9 +168,45 @@ class KubectlStateSource(K8sStateSource):
             raise ValueError(f"Target '{target}' is not on the remediation allowlist")
         return target
 
+    def _known_good_configmap(self, name: str) -> dict:
+        """Fetch the ConfigMap's known-good data from Git (the source of truth)."""
+        import requests
+        import yaml
+
+        if not GITHUB_REPO:
+            raise RuntimeError("GITHUB_REPO is not set; cannot fetch the known-good config from Git")
+        token = os.getenv("GITHUB_TOKEN", "")
+        headers = {"Accept": "application/vnd.github.raw+json"}
+        if token:
+            headers["Authorization"] = f"token {token}"
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{self.KNOWN_GOOD_CONFIG_PATH}"
+        resp = requests.get(url, headers=headers, params={"ref": self.KNOWN_GOOD_CONFIG_REF}, timeout=10)
+        resp.raise_for_status()
+        for doc in yaml.safe_load_all(resp.text):
+            if doc and doc.get("kind") == "ConfigMap" and doc.get("metadata", {}).get("name") == name:
+                data = doc.get("data") or {}
+                if not data or not all(isinstance(v, str) for v in data.values()):
+                    raise RuntimeError(f"Known-good ConfigMap '{name}' in Git has no valid string data")
+                return data
+        raise RuntimeError(f"ConfigMap '{name}' not found in {self.KNOWN_GOOD_CONFIG_PATH}@{self.KNOWN_GOOD_CONFIG_REF}")
+
+    def _restart(self, deployment_name: str) -> None:
+        import time
+        body = {"spec": {"template": {"metadata": {"annotations": {"autoops/restarted-at": str(time.time())}}}}}
+        self._apps_api().patch_namespaced_deployment(deployment_name, self.namespace, body)
+
     def apply_action(self, scenario: str, action: str, target: str) -> str:
         target = self._validate_target(target)
+        if target not in self.ALLOWED_ACTIONS.get(action, set()):
+            raise ValueError(f"Action '{action}' is not allowed on '{target}'")
         name = target.split("/", 1)[1]
+        if action == "restore_config":
+            data = self._known_good_configmap(name)
+            self._core_api().patch_namespaced_config_map(name, self.namespace, {"data": data})
+            consumer = self.CONFIG_CONSUMER[target]
+            self._restart(consumer)
+            return (f"Restored {target} from {self.KNOWN_GOOD_CONFIG_PATH}@{self.KNOWN_GOOD_CONFIG_REF} "
+                    f"({', '.join(sorted(data))}) and restarted deployment/{consumer}")
         api = self._apps_api()
         if action == "rollback_deployment":
             deployment = api.read_namespaced_deployment(name, self.namespace)
@@ -182,13 +229,12 @@ class KubectlStateSource(K8sStateSource):
             api.patch_namespaced_deployment(name, self.namespace, body)
             return f"Rolled {target} back to ReplicaSet revision {previous_revision}"
         if action == "restart_pods":
-            import time
-            body = {"spec": {"template": {"metadata": {"annotations": {"autoops/restarted-at": str(time.time())}}}}}
-            api.patch_namespaced_deployment(name, self.namespace, body)
+            self._restart(name)
             return f"Restart requested for {target}"
         raise ValueError(f"Action '{action}' is not enabled in production")
 
     def verify_health(self, scenario: str, target: str, timeout_seconds: int = 90):
+        target = self.HEALTH_TARGET.get(target.strip(), target)
         target = self._validate_target(target)
         name = target.split("/", 1)[1]
         api = self._apps_api()
