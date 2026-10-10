@@ -62,8 +62,12 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `bad_config` | api can't reach the DB | `DB_HOST` typo in the ConfigMap | `restore_api_config` (re-apply the config from Git, restart api) |
 | `cert_expiry` | checkout returns 502s | api deploy mounted an expired client certificate | `rollback_api` |
 
-`cert_expiry` is deliberately outside the offline engine's known signatures.
-It's there to show what Gemini adds.
+| `vendor_outage` | checkout returns 503s | the external payment provider is down; nothing on our side changed | `escalate` (no safe change to make) |
+| `stuck_worker` | worker queue backs up, throughput zero | a thread holds a lock forever; last deploy was six days ago | `restart_worker` |
+
+`cert_expiry`, `vendor_outage` and `stuck_worker` are outside the offline
+engine's rules (it escalates all three). They show what Gemini adds, including
+knowing when *not* to act.
 
 ## Testing
 

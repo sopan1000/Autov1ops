@@ -17,29 +17,39 @@ curl -s "$AGENT_URL/health" | python3 -m json.tool
 pause
 
 echo
-echo ">>> Scenario 1/5: bad_deploy (a code deploy references a config key that doesn't exist)"
+echo ">>> Scenario 1/7: bad_deploy (a code deploy references a config key that doesn't exist)"
 bash "$(dirname "$0")/../sandbox/chaos/bad_deploy.sh"
 pause
 
 echo
-echo ">>> Scenario 2/5: oom_leak (an unbounded cache eats the container's memory limit)"
+echo ">>> Scenario 2/7: oom_leak (an unbounded cache eats the container's memory limit)"
 bash "$(dirname "$0")/../sandbox/chaos/oom_leak.sh"
 pause
 
 echo
-echo ">>> Scenario 3/5: db_exhaustion (a leaky batch job starves the API of DB connections)"
+echo ">>> Scenario 3/7: db_exhaustion (a leaky batch job starves the API of DB connections)"
 bash "$(dirname "$0")/../sandbox/chaos/db_exhaustion.sh"
 pause
 
 echo
-echo ">>> Scenario 4/5: bad_config (a ConfigMap typo breaks DB connectivity)"
+echo ">>> Scenario 4/7: bad_config (a ConfigMap typo breaks DB connectivity)"
 bash "$(dirname "$0")/../sandbox/chaos/bad_config.sh"
 pause
 
 echo
-echo ">>> Scenario 5/5: cert_expiry - an incident type the offline engine has never seen"
+echo ">>> Scenario 5/7: cert_expiry - an incident type the offline engine has never seen"
 echo "    Gemini off: escalates to a human. Gemini on: diagnoses the expired cert and picks rollback_api."
 bash "$(dirname "$0")/../sandbox/chaos/cert_expiry.sh"
+pause
+
+echo
+echo ">>> Scenario 6/7: vendor_outage - the payment provider is down; the right move is to change nothing"
+bash "$(dirname "$0")/../sandbox/chaos/vendor_outage.sh"
+pause
+
+echo
+echo ">>> Scenario 7/7: stuck_worker - a deadlocked worker with no recent deploy; restart, don't roll back"
+bash "$(dirname "$0")/../sandbox/chaos/stuck_worker.sh"
 
 echo
 echo "Open the dashboard to approve each fix and watch it resolve:"

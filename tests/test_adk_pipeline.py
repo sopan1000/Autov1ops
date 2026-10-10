@@ -131,8 +131,12 @@ def test_planner_cannot_choose_fix_outside_allowlist():
     assert incident.proposed_fix.fix_id == "escalate"
 
 
-def test_offline_engine_escalates_unseen_incident():
-    incident = orchestrator.handle_alert("cert_expiry")
+import pytest
+
+
+@pytest.mark.parametrize("scenario", ["cert_expiry", "vendor_outage", "stuck_worker"])
+def test_offline_engine_escalates_incidents_outside_its_rules(scenario):
+    incident = orchestrator.handle_alert(scenario)
     assert incident.ai_engine.startswith("offline heuristic")
     assert incident.diagnosis.root_cause_type == "unknown"
     assert incident.status.value == "escalated"

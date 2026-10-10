@@ -13,6 +13,9 @@ SCENARIO_ALERTS = {
     "bad_config": "api service: requests failing at the database layer since the last config change",
     # Not one of the offline engine's known signatures - shows what Gemini adds.
     "cert_expiry": "api service: checkout error rate 74%, mostly 502s on POST /checkout",
+    # Rollback is the wrong answer for these two.
+    "vendor_outage": "api service: checkout error rate 68%, mostly 503s on POST /checkout",
+    "stuck_worker": "worker service: job queue depth 4,200 and climbing, throughput dropped to zero",
 }
 
 

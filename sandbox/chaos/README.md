@@ -18,8 +18,10 @@ export AGENT_URL=http://localhost:8000   # or your Cloud Run URL
 ./oom_leak.sh
 ./db_exhaustion.sh
 ./bad_config.sh
-./cert_expiry.sh   # unseen incident type: fixture-only, shows what Gemini adds
+./cert_expiry.sh   # outside the offline rules: fixture-only, shows what Gemini adds
+./vendor_outage.sh # external outage: the right answer is to escalate, fixture-only
+./stuck_worker.sh  # deadlocked worker: restart, not rollback, fixture-only
 ```
 
-Run `../../scripts/demo.sh` to fire all five in sequence with pauses,
+Run `../../scripts/demo.sh` to fire all seven in sequence with pauses,
 scripted for a live walkthrough.
