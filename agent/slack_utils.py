@@ -67,11 +67,18 @@ def build_incident_blocks(incident) -> list:
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*Root cause* ({diag.confidence:.0%} confidence):\n{diag.root_cause}"},
         })
-    if fix:
+    if fix and fix.fix_id == "escalate":
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Proposed fix* (risk: {fix.risk.value}):\n{fix.description}\n```{fix.diff}```"},
+            "text": {"type": "mrkdwn", "text": f"*Escalated to on-call:* {fix.justification or fix.description}"},
         })
+    elif fix:
+        why = f"\n*Why:* {fix.justification}" if fix.justification else ""
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Proposed fix* (risk: {fix.risk.value}):\n{fix.description}\n```{fix.diff}```{why}"},
+        })
+    if fix and incident.status.value == "awaiting_approval":
         blocks.append({
             "type": "actions",
             "elements": [

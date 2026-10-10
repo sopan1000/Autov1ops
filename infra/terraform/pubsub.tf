@@ -1,10 +1,17 @@
-# The doorbell: a Cloud Monitoring alert policy publishes here, and a push
-# subscription forwards straight to the agent's /alerts endpoint on Cloud
-# Run. Wire the alert policy itself in the Cloud Console or via
-# google_monitoring_alert_policy once you've picked real thresholds against
-# the sandbox app's traffic pattern.
 resource "google_pubsub_topic" "incidents" {
   name = "autoops-incidents"
+}
+
+resource "google_service_account" "pubsub_push" {
+  account_id   = "autoops-pubsub-push"
+  display_name = "AutoOps Pub/Sub push identity"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "pubsub_invoker" {
+  name     = google_cloud_run_v2_service.agent.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.pubsub_push.email}"
 }
 
 resource "google_pubsub_subscription" "to_agent" {
@@ -12,8 +19,16 @@ resource "google_pubsub_subscription" "to_agent" {
   topic = google_pubsub_topic.incidents.name
 
   push_config {
-    push_endpoint = "${google_cloud_run_v2_service.agent.uri}/alerts"
+    push_endpoint = "${google_cloud_run_v2_service.agent.uri}/events/pubsub"
+    oidc_token {
+      service_account_email = google_service_account.pubsub_push.email
+      audience              = var.pubsub_audience
+    }
   }
 
-  ack_deadline_seconds = 30
+  ack_deadline_seconds = 300
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
 }

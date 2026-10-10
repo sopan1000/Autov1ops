@@ -1,47 +1,39 @@
 # Submission checklist
 
 Source: https://aibuildercup.com/themes.html (confirmed 2026-09-18).
-Re-check before submitting in case requirements are updated.
+Re-check before submitting in case requirements have changed.
 
 ## Deadlines
 - [ ] Team of 2–4 formed on Hack2skill by **Oct 11, 2026**
-- [ ] Prototype submitted by **Oct 18, 2026** — submit by Oct 16 to leave
-      slack for last-minute issues
-
-## Required submission artifacts
-- [ ] **Proposal deck**, exported as PDF: problem statement, positive
-      impact, alignment with Future of Work & Enterprise Productivity,
-      feasibility, scalability story
-- [ ] **Functional prototype**: built with Gemini/Gemma or an agentic
-      platform (Agent Development Kit ✓), deployed on Cloud Run ✓ (or
-      Firebase) — `agent/` satisfies this once deployed via `cloudbuild.yaml`
-- [ ] **3-minute video**: public YouTube/Vimeo/Drive link — script in
-      [DEMO_SCRIPT.md](DEMO_SCRIPT.md)
-- [ ] **Category specification**: state the problem statement/track
-      clearly (Future of Work & Enterprise Productivity)
-- [ ] All submission materials in **English**
+- [ ] Prototype submitted by **Oct 18, 2026**. Aim for Oct 16.
 
 ## Mandatory technical requirements
-- [ ] Uses Google AI models (Gemini) — `agent/llm.py`, `USE_REAL_GEMINI=true`
-- [ ] Built using an agentic platform — Google's Agent Development
-      Kit pattern (`agent/agents/orchestrator.py`)
-- [ ] Deployed on Google Cloud via Cloud Run or Firebase —
-      `agent/Dockerfile` + `cloudbuild.yaml` → Cloud Run
+- [ ] **Google AI model**: Gemini, via `agent/adk_pipeline.py` with `USE_REAL_GEMINI=true`
+- [ ] **Agentic platform**: Google Agent Development Kit (ADK) `LlmAgent`s in a `SequentialAgent`
+- [ ] **Deployed on Cloud Run**: `gcloud run deploy --source .` (docs/DEPLOY.md)
 
-## Before recording/submitting, verify live
-- [ ] All 4 chaos scenarios produce a correct diagnosis and a sensible
-      fix (`scripts/demo.sh`)
-- [ ] `USE_REAL_GEMINI=true` actually returns valid JSON matching the
-      `Diagnosis` schema against a real Vertex AI project (test this
-      well before the deadline — controlled generation quirks are
-      easier to debug with days, not hours, to spare)
-- [ ] The deployed Cloud Run URL responds to `/health`
-- [ ] The dashboard, pointed at the Cloud Run URL, loads and updates
-- [ ] Approve/Reject both work end-to-end against the real deployment,
-      not just localhost
+## Required submission artifacts
+- [ ] **Proposal deck as PDF**: problem, impact, alignment with Future of Work &
+      Enterprise Productivity, feasibility, scalability
+- [ ] **Working prototype link**: the Cloud Run URL (it opens the dashboard at `/ui`)
+- [ ] **3-minute video**, public YouTube/Vimeo/Drive link. Script: [DEMO_SCRIPT.md](DEMO_SCRIPT.md)
+- [ ] **Category stated**: Future of Work & Enterprise Productivity
+- [ ] Everything in **English**
 
-## Judging criteria to keep front-of-mind while polishing
-Technical Merit & Gen AI Implementation 40% · Problem Alignment & Impact
-25% · Innovation & Creativity 25% · UX & Solution Design 10%. See
-README.md "Judging criteria — where this scores" for how this project
-maps to each.
+## Verify before recording and submitting
+- [ ] `PYTHONPATH=. pytest -q` passes (9 tests)
+- [ ] `scripts/gemini_smoke_test.py` passes 5/5 against real Gemini
+- [ ] Deployed `/health` shows `"ai_engine": "<model> via ADK"`, not "offline"
+- [ ] On the deployed dashboard, every scenario diagnoses correctly with no
+      `gemini unavailable` step in its trace
+- [ ] `cert_expiry` gets `rollback_api` with Gemini on
+- [ ] Approve, Reject and Ask AutoOps all work on the deployed URL
+- [ ] The incident list survives a redeploy (proves Firestore is in use)
+- [ ] The GitHub repo `main` branch contains this code (not the original scaffold)
+
+## After judging
+- [ ] Remove public access or delete the Cloud Run service (docs/DEPLOY.md)
+
+## Judging weights
+Technical Merit & Gen AI Implementation 40% · Problem Alignment & Impact 25% ·
+Innovation & Creativity 25% · UX & Solution Design 10%.

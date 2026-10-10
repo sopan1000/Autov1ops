@@ -1,182 +1,126 @@
-# AutoOps — an AI on-call engineer
+# AutoOps: an AI on-call engineer
 
 Built for the **Google Cloud AI Builder Cup 2026** (JAPAC, by Hack2skill),
 theme: **Future of Work & Enterprise Productivity**.
 
-AutoOps watches a production system, diagnoses incidents the way an SRE
-would (reading logs, metrics, deploy history, and cluster events), proposes
-a specific fix with a risk rating, waits for a human's one-click approval,
-applies it, verifies recovery, and writes the postmortem — building a
-runbook library that makes the next similar incident faster to resolve.
+When production breaks, AutoOps does the first hour of on-call work.
+**Gemini agents built on Google's Agent Development Kit (ADK)** investigate
+the incident: they decide which logs, metrics, deploys and cluster events to
+examine, name the root cause with quoted evidence, and pick a fix from a
+fixed list of safe actions, explaining why. A human approves with one click.
+AutoOps applies the fix, verifies recovery, and writes the postmortem and a
+runbook that makes the next similar incident faster. Engineers can ask
+follow-up questions on any incident ("why not just restart it?").
 
-**This repo runs completely locally with zero GCP setup.** Every "cloud
-tool" (Cloud Logging, Monitoring, GitHub, kubectl) has a mock implementation
-that reads realistic fixture data, and the diagnosis step has a genuine
-rule-based fallback when no Gemini API key is configured. Flip a couple of
-env vars and the exact same code talks to real GCP. See "Going to real GCP"
-below.
-
-## Quickstart (2 minutes, no GCP account needed)
+## Quickstart
 
 ```bash
+# Offline (no setup; uses the fallback engine)
 docker-compose up --build
+
+# With real Gemini (AI Studio key: https://aistudio.google.com/apikey)
+USE_REAL_GEMINI=true GOOGLE_API_KEY=your-key docker-compose up --build
 ```
 
-- Agent API: http://localhost:8000 (try http://localhost:8000/health)
-- Dashboard: http://localhost:3000
+Open http://localhost:3000 (or http://localhost:8000/ui) and click a
+scenario under **Break something**. The header badge shows which AI engine
+is active. Try **cert expiry**: offline, it escalates to a human; with
+Gemini, it diagnoses the expired certificate and proposes the fix.
 
-Then, in another terminal, break something:
+Scripted walkthrough: `./scripts/demo.sh`. Reset: `./scripts/reset_demo.sh`.
+
+## How it works
+
+```
+alert ─► Watcher ─► ┌ ADK SequentialAgent (Gemini) ─────────────────────────┐
+                    │ investigator  ── tools: logs, metrics, deploys,       │
+                    │                  cluster events, past runbooks        │
+                    │ diagnoser     ── root cause + evidence + confidence   │
+                    │ planner       ── ONE fix from the allowlist + why     │
+                    └───────────────────────────────────────────────────────┘
+          ─► Remediator (validates) ─► human approval ─► Executor (apply + verify)
+          ─► Scribe (Gemini postmortem + runbook)        Ask AutoOps (Gemini Q&A)
+```
+
+**Safety by design:** the AI never writes or runs commands. The planner
+can only return a `fix_id` from the catalog in `agent/agents/remediator.py`
+(enforced by ADK schema validation), and the Kubernetes adapter re-checks
+every action and target. Fixes wait for human approval unless you opt into
+confidence-gated auto-remediation (`AUTO_REMEDIATE=true`, low-risk fixes at
+≥90% confidence only). If Gemini is unavailable, incidents fall back to an
+offline engine and say so.
+
+Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Scenarios
+
+| Scenario | What breaks | Expected root cause | Expected fix |
+|---|---|---|---|
+| `bad_deploy` | worker crash-loops | deploy reads a config key that doesn't exist | `rollback_worker` |
+| `oom_leak` | worker OOMKilled repeatedly | new unbounded in-memory cache | `rollback_worker` |
+| `db_exhaustion` | api returns 500s | worker batch job leaks DB connections, starving the api | `rollback_worker` |
+| `bad_config` | api can't reach the DB | `DB_HOST` typo in the ConfigMap | `restart_api` |
+| `cert_expiry` | checkout returns 502s | api deploy mounted an expired client certificate | `rollback_api` |
+
+`cert_expiry` is deliberately outside the offline engine's known signatures.
+It's there to show what Gemini adds.
+
+## Testing
 
 ```bash
-export AGENT_URL=http://localhost:8000
-./sandbox/chaos/bad_deploy.sh
+pip install -r agent/requirements.txt
+PYTHONPATH=. pytest -q                     # 9 tests, no network needed
+python scripts/gemini_smoke_test.py        # real Gemini: all 5 scenarios (needs GOOGLE_API_KEY or GCP login)
 ```
 
-Open the dashboard, watch the incident appear with a live reasoning trace,
-click **Approve**, and watch it resolve. Or run the full scripted walkthrough:
+`tests/test_adk_pipeline.py` runs the real ADK agents with a scripted model
+standing in for Gemini, covering tool calls, agent handoff, schema
+validation (including a planner trying a fix outside the allowlist),
+approval, postmortem and Q&A.
 
-```bash
-./scripts/demo.sh
-```
+## Deploy
 
-Reset between rehearsals with `./scripts/reset_demo.sh`.
-
-## Architecture
-
-```
- Cloud Monitoring alert
-         │  (Pub/Sub push, in prod)
-         ▼
-   ┌─────────────┐
-   │   Watcher    │  creates the Incident record
-   └──────┬──────┘
-          ▼
-   ┌─────────────┐   tools: Cloud Logging, Cloud Monitoring,
-   │  Diagnoser   │◄──GitHub (deploy history), kubectl (cluster
-   │  (Gemini)    │   events), Vertex AI Search (past runbooks)
-   └──────┬──────┘
-          ▼
-   ┌─────────────┐
-   │ Remediator   │  proposes a fix from a fixed, reviewable allowlist
-   └──────┬──────┘   (rollback / restart / scale / config-revert)
-          ▼
-   ┌─────────────┐
-   │ Human review │  Slack (or dashboard) — Approve / Reject
-   └──────┬──────┘
-          ▼
-   ┌─────────────┐
-   │  Executor    │  applies the fix, verifies health, auto-rolls-back
-   └──────┬──────┘   on regression
-          ▼
-   ┌─────────────┐
-   │   Scribe     │  writes the postmortem, saves a runbook for next time
-   └─────────────┘
-```
-
-Everything above the "Human review" line only ever *proposes*; nothing
-touches production without explicit approval, and even what it can propose
-is limited to four allowlisted actions (see `agent/agents/remediator.py`).
-That's the safety story that makes this plausible for an actual enterprise
-to adopt, not just a hackathon toy.
-
-Full technical detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See **[docs/DEPLOY.md](docs/DEPLOY.md)**. The fast path is a single
+`gcloud run deploy --source .` command that gives you the agent and dashboard
+on Cloud Run with Gemini on Vertex AI and Firestore for state.
 
 ## Repo layout
 
 ```
-agent/            The agent pipeline - a single FastAPI service (Cloud Run)
-  models.py         Shared data models (Incident, Diagnosis, ProposedFix, ...)
-  store.py          Storage: local JSON (demo) or Firestore (prod)
-  llm.py            Gemini call (real) + heuristic fallback (offline demo)
-  tools/            Cloud Logging/Monitoring/GitHub/kubectl - mock + real
-  agents/           Watcher, Diagnoser, Remediator, Executor, Scribe
-  main.py           FastAPI routes + Slack webhook
-  data/mock_incidents/   4 realistic incident fixtures used in mock mode
-sandbox/           The "victim" app AutoOps watches over
-  api/, worker/       Minimal FastAPI/stdlib services with fault hooks
-  k8s/                Kubernetes manifests (GKE Autopilot target)
-  chaos/              Scripts that trigger each of the 4 incident scenarios
-infra/terraform/   GKE, Cloud SQL, Pub/Sub, IAM, Cloud Run - real GCP deploy
-dashboard/         Static HTML/JS/CSS - live incident feed, no build step
-docs/              Architecture deep-dive, demo video script, submission checklist
-scripts/           demo.sh (scripted walkthrough), reset_demo.sh
+agent/
+  adk_pipeline.py      ADK agents, tools and prompts (Gemini)
+  offline_engine.py    Fallback when Gemini is off or unavailable
+  agents/              Watcher, Diagnoser, Remediator, Executor, Scribe, Orchestrator
+  tools/               Evidence sources: fixture-backed mocks + real GCP/Kubernetes
+  main.py              FastAPI: alerts, approvals, Ask, Pub/Sub, Slack; serves /ui
+  data/mock_incidents/ The 5 scenario fixtures
+dashboard/             Static HTML/JS/CSS dashboard (no build step)
+sandbox/               Demo "victim" app, Kubernetes manifests, chaos scripts
+infra/terraform/       Full GCP stack (GKE, Cloud SQL, Pub/Sub, IAM, Cloud Run)
+scripts/               demo.sh, reset_demo.sh, gemini_smoke_test.py
+docs/                  ARCHITECTURE, DEPLOY, DEMO_SCRIPT, SUBMISSION_CHECKLIST
 ```
 
-## The 4 incident scenarios
+## Configuration
 
-| Scenario | What breaks | Root cause AutoOps finds | Proposed fix |
-|---|---|---|---|
-| `bad_deploy` | worker crash-loops | deploy references a config key that was never added | roll back deployment |
-| `oom_leak` | worker OOMKilled repeatedly | new deploy added an unbounded in-memory cache | roll back deployment |
-| `db_exhaustion` | api returns 500s | a leaky batch job never releases DB connections | roll back + restart api |
-| `bad_config` | api can't reach the DB | a ConfigMap typo in `DB_HOST` | revert the ConfigMap |
+All environment variables are documented in [.env.example](.env.example).
+The main switches:
 
-Trigger any of them: `./sandbox/chaos/<scenario>.sh`
+| Variable | Default | Meaning |
+|---|---|---|
+| `USE_REAL_GEMINI` | `false` | Gemini agents via ADK; otherwise the offline engine |
+| `GOOGLE_API_KEY` | – | AI Studio key; leave unset on GCP to use Vertex AI |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | model for all agents |
+| `MOCK_TOOLS` | `true` | fixture evidence; `false` reads the live cluster |
+| `STORE_BACKEND` | `local` | `firestore` on Cloud Run |
+| `AUTO_REMEDIATE` | `false` | confidence-gated auto-apply of low-risk fixes |
 
-## Going to real GCP
+## Production hardening
 
-The same code runs against a real cluster and real Gemini. Nothing in
-`agent/agents/` or `agent/main.py` changes - only environment variables and
-which classes `agent/tools/__init__.py` selects.
-
-1. **Provision infra**
-   ```bash
-   cd infra/terraform
-   terraform init
-   terraform apply -var="project_id=YOUR_PROJECT_ID"
-   ```
-2. **Deploy the sandbox app** to the GKE cluster Terraform created:
-   ```bash
-   kubectl apply -f sandbox/k8s/
-   # build + push sandbox/api and sandbox/worker images first (see their Dockerfiles)
-   ```
-3. **Bind Workload Identity** so the agent's GSA can act as a namespace-scoped KSA:
-   ```bash
-   kubectl create rolebinding autoops-agent-editor \
-     --role=edit --serviceaccount=autoops-sandbox:autoops-agent -n autoops-sandbox
-   ```
-4. **Build and deploy the agent** to Cloud Run:
-   ```bash
-   gcloud builds submit --config cloudbuild.yaml .
-   ```
-5. **Flip the switches** (already set by `cloudbuild.yaml`, or manually):
-   `MOCK_TOOLS=false`, `STORE_BACKEND=firestore`, `USE_REAL_GEMINI=true`,
-   plus `GCP_PROJECT`, `GITHUB_REPO`, `GITHUB_TOKEN`.
-6. **Point the dashboard** at the Cloud Run URL: edit `dashboard/config.js`
-   or set `window.AUTOOPS_API_URL` before `app.js` loads, then deploy
-   `dashboard/` to Firebase Hosting.
-7. **Wire the alert policy**: a Cloud Monitoring alert policy (on the
-   metrics `sandbox/api` and `sandbox/worker` emit) with a notification
-   channel publishing to the `autoops-incidents` Pub/Sub topic Terraform
-   created - that topic already push-subscribes to the deployed agent's
-   `/alerts` endpoint.
-
-Full env var reference: [.env.example](.env.example).
-
-## Team
-
-| Area | Owner |
-|---|---|
-| Agents (`agent/agents/`, `agent/llm.py`) | Agents lead |
-| Infra (`sandbox/`, `infra/`, chaos scripts) | Platform/infra |
-| Dashboard + Slack integration | Frontend/integrations |
-| Pitch, demo video, submission, QA across all 4 scenarios | Product/pitch |
-
-## Judging criteria — where this scores
-
-- **Technical Merit & Gen AI Implementation (40%)** — Gemini performs real
-  multi-source reasoning (logs + metrics + deploys + cluster events →
-  root cause with cited evidence and rejected hypotheses), not a
-  summarization wrapper. `USE_REAL_GEMINI=true` swaps in the live model
-  with controlled generation (`response_schema`) — see `agent/llm.py`.
-- **Problem Alignment & Impact (25%)** — directly cuts the most painful,
-  repetitive part of on-call work; the runbook library gives a concrete,
-  compounding scalability story.
-- **Innovation & Creativity (25%)** — the human-approval gate and
-  allowlisted-actions design is the differentiator from "AI ops" demos
-  that just auto-execute; it's what makes this enterprise-credible.
-- **UX & Solution Design (10%)** — one dashboard, one Slack message, one
-  click. The agent's reasoning is visible, not a black box.
-
-Submission checklist: [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md).
-Demo video script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+Authenticated API (`AUTOOPS_API_KEY`), OIDC-verified Pub/Sub push,
+Firestore state, idempotent alert intake, an approval state machine that
+prevents replays, allowlisted remediation intents, Kubernetes access via
+Google ADC (no kubeconfig in the image), post-fix health verification, and
+a non-root container. Before enabling real remediation, apply the
+namespace-scoped RBAC in `sandbox/k8s/rbac.yaml` and test every action in a
+staging cluster.

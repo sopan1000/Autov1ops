@@ -38,3 +38,16 @@ resource "google_project_iam_member" "agent_firestore_user" {
 #     --role=edit --serviceaccount=autoops-sandbox:autoops-agent \
 #     -n autoops-sandbox
 # with Workload Identity binding the GSA above to that KSA.
+
+resource "google_project_iam_member" "agent_container_viewer" {
+  project = var.project_id
+  role    = "roles/container.viewer"
+  member  = "serviceAccount:${google_service_account.agent.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "agent_api_key" {
+  project   = var.project_id
+  secret_id = var.api_key_secret_name
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.agent.email}"
+}

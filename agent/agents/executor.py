@@ -1,9 +1,5 @@
-"""
-Executor: applies an approved fix and verifies recovery. Only ever called
-after a human (or an explicit auto-approve policy) has said yes - see
-agents/orchestrator.py.
-"""
-from ..models import Incident, IncidentStatus, ResolutionResult
+"""Apply an approved remediation and verify the workload actually recovered."""
+from ..models import Incident, IncidentStatus, ResolutionResult, now
 from ..tools import k8s_source
 
 
@@ -18,24 +14,27 @@ def run(incident: Incident, store) -> Incident:
     incident.log("executor", "apply_fix", f"Applying approved fix: {fix.description}")
 
     try:
-        result = k8s_source.apply_action(incident.scenario, fix.action, fix.diff)
-        incident.log("executor", "apply_result", result)
+        result = k8s_source.apply_action(incident.scenario, fix.action, fix.target)
+        incident.log("executor", "apply_result", result or "Remediation command completed")
+        incident.status = IncidentStatus.VERIFYING
+        incident.log("executor", "health_check", f"Verifying {fix.target} recovery")
 
-        incident.log("executor", "health_check", "Re-checking service health after remediation...")
-        # In a real cluster this polls Cloud Monitoring for the alerting
-        # metric to drop back under threshold for N consecutive minutes
-        # before declaring success; the mock path simulates that check
-        # passing so the demo doesn't stall on a real wait.
+        verification = k8s_source.verify_health(incident.scenario, fix.target)
         incident.resolution = ResolutionResult(
-            success=True,
-            detail=result,
-            health_after="healthy - alerting metric back under threshold",
+            success=bool(verification["healthy"]),
+            detail=result or "Remediation command completed",
+            health_after=verification["detail"],
+            verification_attempts=int(verification.get("attempts", 1)),
+            verified_at=now() if verification["healthy"] else None,
         )
-        incident.status = IncidentStatus.RESOLVED
-        incident.log("executor", "resolved", "Health check passed. Incident resolved.")
-    except Exception as exc:  # noqa: BLE001 - deliberately broad: any tool failure must not crash the API
+        if verification["healthy"]:
+            incident.status = IncidentStatus.RESOLVED
+            incident.log("executor", "resolved", "Post-remediation health verification passed.")
+        else:
+            incident.status = IncidentStatus.FAILED
+            incident.log("executor", "verification_failed", "Remediation completed but recovery was not verified; escalating to on-call.")
+    except Exception as exc:  # noqa: BLE001
         incident.resolution = ResolutionResult(success=False, detail=str(exc), health_after="unknown")
         incident.status = IncidentStatus.FAILED
         incident.log("executor", "failed", f"Remediation failed: {exc}. Escalating to human on-call.")
-
     return incident

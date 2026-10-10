@@ -47,7 +47,7 @@ class K8sStateSource:
     def get_events(self, scenario: str, namespace: str = "autoops-sandbox") -> List[K8sEvent]:
         raise NotImplementedError
 
-    def apply_action(self, scenario: str, action: str, diff: str) -> str:
+    def apply_action(self, scenario: str, action: str, target: str) -> str:
         """Applies a remediation. Mock version simulates success; the real
         version shells out to kubectl / triggers Cloud Build."""
         raise NotImplementedError
@@ -96,11 +96,14 @@ class MockK8sStateSource(K8sStateSource):
         data = _load_fixture(scenario)
         return [K8sEvent(**e) for e in data.get("k8s_events", [])]
 
-    def apply_action(self, scenario: str, action: str, diff: str) -> str:
+    def apply_action(self, scenario: str, action: str, target: str) -> str:
         # Simulated apply: in local/demo mode there's no real cluster to
         # mutate, so we just report success. The real K8sStateSource in
         # cloud.py shells out to kubectl for real.
-        return f"[mock] applied '{action}' successfully (dry-run in local mode)"
+        return f"[mock] applied '{action}' to '{target}' successfully (dry-run in local mode)"
+
+    def verify_health(self, scenario: str, target: str, timeout_seconds: int = 60):
+        return {"healthy": True, "detail": "[mock] health verification passed", "attempts": 1}
 
 
 class MockRunbookSearch(RunbookSearch):

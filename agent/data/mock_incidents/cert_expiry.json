@@ -1,0 +1,42 @@
+{
+  "scenario": "cert_expiry",
+  "alert_summary": "api service: checkout error rate 74%, mostly 502s on POST /checkout",
+  "logs": [
+    {"timestamp": "2026-10-14T21:02:10Z", "service": "api", "level": "INFO", "message": "api starting, image=api:v4.2, mounted secret payments-client-cert (bundle certs/2025-q4)"},
+    {"timestamp": "2026-10-14T21:03:41Z", "service": "api", "level": "ERROR", "message": "POST /checkout 502: upstream payments-gateway.internal:443 TLS handshake failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (client cert notAfter=2026-10-14T00:00:00Z)"},
+    {"timestamp": "2026-10-14T21:03:55Z", "service": "api", "level": "ERROR", "message": "POST /checkout 502: upstream payments-gateway.internal:443 TLS handshake failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate has expired"},
+    {"timestamp": "2026-10-14T21:04:20Z", "service": "api", "level": "WARN", "message": "payments-gateway circuit breaker OPEN after 25 consecutive TLS failures"},
+    {"timestamp": "2026-10-14T21:04:30Z", "service": "api", "level": "INFO", "message": "GET /orders/1 200 (12ms)"},
+    {"timestamp": "2026-10-14T21:04:31Z", "service": "worker", "level": "INFO", "message": "processed job job_9120"},
+    {"timestamp": "2026-10-14T20:55:00Z", "service": "api", "level": "INFO", "message": "api healthy, image=api:v4.1, mounted secret payments-client-cert (bundle certs/2026-q3), checkout success 99.8%"}
+  ],
+  "metrics": [
+    {"name": "checkout_error_rate", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T20:55:00Z", "value": 0.2},
+      {"timestamp": "2026-10-14T21:02:00Z", "value": 0.3},
+      {"timestamp": "2026-10-14T21:04:00Z", "value": 71.0},
+      {"timestamp": "2026-10-14T21:05:00Z", "value": 74.4}
+    ]},
+    {"name": "api_error_rate_non_checkout", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T20:55:00Z", "value": 0.3},
+      {"timestamp": "2026-10-14T21:05:00Z", "value": 0.4}
+    ]},
+    {"name": "pod_restart_count", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T20:55:00Z", "value": 0},
+      {"timestamp": "2026-10-14T21:05:00Z", "value": 0}
+    ]}
+  ],
+  "deploys": [
+    {"service": "api", "image_tag": "api:v4.2", "timestamp": "2026-10-14T21:01:50Z", "author": "meera", "commit_message": "chore: rotate payments-gateway client certificate secret to certs/2025-q4 bundle"},
+    {"service": "api", "image_tag": "api:v4.1", "timestamp": "2026-10-09T11:20:00Z", "author": "dev", "commit_message": "feat: add order history pagination"}
+  ],
+  "k8s_events": [
+    {"reason": "Unhealthy", "message": "Readiness probe /health/deps reports degraded: payments-gateway unreachable (TLS)", "timestamp": "2026-10-14T21:04:00Z", "object": "api-5c8d-uvwxy"}
+  ],
+  "expected": {
+    "note": "Deliberately outside the offline engine's signatures. Never read by the agents; documents the intended answer.",
+    "root_cause": "The api:v4.2 deploy at 21:01:50 mounted an older client-certificate bundle (certs/2025-q4) whose cert expired 2026-10-14. Outbound mTLS to payments-gateway fails, so only checkout returns 502s; other routes and pods are healthy.",
+    "fix_id": "rollback_api",
+    "offline_engine_result": "unknown -> escalate"
+  }
+}

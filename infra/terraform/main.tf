@@ -24,7 +24,24 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+    "secretmanager.googleapis.com",
   ])
   service            = each.key
   disable_on_destroy = false
+}
+
+resource "google_firestore_database" "default" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = var.region
+  type        = "FIRESTORE_NATIVE"
+  depends_on  = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret" "api_key" {
+  secret_id = var.api_key_secret_name
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
 }

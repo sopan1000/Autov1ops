@@ -1,57 +1,58 @@
 # 3-minute demo video script
 
-Required by the submission rules: a public YouTube/Vimeo/Drive link, ~3
-minutes, showing the solution in action. Record with `scripts/demo.sh`
-running in one pane and the dashboard on screen.
+Required by the submission rules: a public YouTube, Vimeo or Drive link,
+about 3 minutes. Record against the **deployed Cloud Run URL with Gemini on**
+(header badge green), not localhost.
 
 ## Beat sheet
 
-**0:00–0:20 — The problem**
-"When something breaks in production, an on-call engineer spends the
-first 30 to 60 minutes doing the same manual investigation every time:
-read the logs, check what deployed recently, compare metrics, guess,
-try a fix, write it up after. AutoOps does that investigation
-automatically."
+**0:00–0:20: The problem (your own story)**
+"I'm a DevOps engineer. When production breaks, the first 30 to 60 minutes
+of every incident are the same manual detective work: read the logs, check
+what deployed, compare graphs, guess, fix, write it up. AutoOps does that
+part." Add one sourced industry statistic on downtime cost or MTTR here.
 
-**0:20–0:50 — Architecture, fast**
-Show the pipeline diagram (README). "Five agents built on Gemini and
-Google's Agent Development Kit, deployed on Cloud Run: a Watcher that
-catches the alert, a Diagnoser that reads logs, metrics, deploy history,
-and cluster events, a Remediator that proposes a specific fix from a
-fixed, reviewable set of actions - never a free-form command - and only
-after a human approves it, an Executor applies it and a Scribe writes
-the postmortem."
+**0:20–0:45: How it works**
+Show the pipeline diagram (docs/ARCHITECTURE.md). "Gemini agents built on
+Google's Agent Development Kit, running on Cloud Run. An investigator that
+chooses which logs, metrics and deploys to examine; a diagnoser; and a
+planner that picks a fix from a fixed safe list. AI proposes, a human
+approves, nothing runs without a yes."
 
-**0:50–2:20 — Live break-and-fix (the core of the video)**
-Run `./sandbox/chaos/bad_deploy.sh` (or `db_exhaustion.sh` - pick
-whichever reads best on camera) with the dashboard visible.
-- Show the incident appear within seconds.
-- Point at the reasoning trace: "it's not just summarizing - it read
-  these specific log lines, checked the deploy that went out 12 minutes
-  ago, and connected the two."
-- Show the proposed fix and risk rating.
-- Click Approve on camera.
-- Show it resolve, and the runbook get written.
+**0:45–1:40: Break something**
+Click **db exhaustion** on the dashboard.
+- Open the reasoning trace: point at the **tool calls**. "It decided to
+  check deploys, then logs, then connection metrics."
+- Read the root cause: the *worker* leaked connections and took down the
+  *api*. "It found the upstream cause, not the symptom."
+- Show the fix, the risk and **Ruled out**. Click **Approve**.
+- Show the resolution verified and the postmortem written. Point at the timer.
 
-**2:20–2:45 — The learning loop**
-Trigger the *same* scenario again (or narrate this from the runbook
-list): "the next time this happens, the Diagnoser already has this
-runbook - it gets faster and more confident over time, which is the
-scalability story: this isn't a one-off script, it's a system that
-compounds."
+**1:40–2:20: The unseen incident (your strongest moment)**
+Click **cert expiry**. "We never wrote a rule for this one." Show Gemini
+diagnosing the expired client certificate from the deploy history and TLS
+errors, and choosing to roll back the api. Optional: show the same scenario
+with Gemini off, where it simply escalates to a human. That contrast is the
+whole case for Gen AI here.
 
-**2:45–3:00 — Close**
-"Built for Future of Work & Enterprise Productivity. [Team name],
-AI Builder Cup 2026."
+**2:20–2:40: Ask AutoOps**
+Type "Why not just restart the api?" and show the answer: a restart would
+remount the same expired certificate.
+
+**2:40–3:00: Safety and close**
+"Allowlisted actions only, human approval, verified recovery, automatic
+fallback when the model is unavailable, and runbooks that make the next
+incident faster. Built for Future of Work & Enterprise Productivity.
+[Team name], AI Builder Cup 2026."
 
 ## Filming notes
 
-- Rehearse the exact click sequence at least twice before recording -
-  the dashboard's 2-second polling means a click-to-update lag of up to
-  ~2s; don't narrate over dead air, cut to it.
-- Have `scripts/reset_demo.sh` run right before recording so the
-  dashboard starts empty.
-- Record a fallback take with `MOCK_TOOLS=true` even if you deploy to
-  real GCP for judging - it removes all live-demo risk (network, quota,
-  a stale cluster) from the one artifact you can't re-record after
-  the deadline.
+- Run `scripts/gemini_smoke_test.py` first and only record once it passes 5/5.
+- Gemini takes several seconds per incident. The dashboard shows an
+  "investigating…" card, but cut the waiting in editing rather than talking over it.
+- Start from an empty dashboard: run `scripts/reset_demo.sh` locally, or on
+  Cloud Run delete the `incidents` and `runbooks` collections in Firestore.
+- Record one backup take locally (`docker-compose up` with `USE_REAL_GEMINI=true`
+  and an AI Studio key) in case Cloud Run has issues on recording day.
+- Gemini's wording changes between runs. Rehearse with the real output, and
+  don't script lines that quote it word for word.
