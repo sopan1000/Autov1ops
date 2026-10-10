@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .agents import orchestrator
 from .agents.watcher import SCENARIO_ALERTS
+from .models import DEFAULT_GEMINI_MODEL
 from .slack_utils import build_incident_blocks, parse_interaction, verify_signature
 from .store import get_store
 
@@ -97,7 +98,7 @@ def _verify_pubsub_oidc(request: Request) -> None:
 @app.get("/health")
 def health():
     gemini = os.getenv("USE_REAL_GEMINI", "false").lower() == "true"
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     return {
         "status": "ok",
         "service": "autoops-agent",

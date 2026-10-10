@@ -9,6 +9,10 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# Default Gemini model. gemini-2.5-flash is closed to new API users (Oct 2026).
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

@@ -34,15 +34,16 @@ GCP_PROJECT=your-project GCP_LOCATION=us-central1 python scripts/gemini_smoke_te
 You want `5/5 scenarios passed`. For each scenario it prints the root cause,
 the chosen fix, Gemini's justification and which tools the investigator called.
 
-- **`fell back to offline engine: ... NotFound / 404 model`**: that model
-  isn't available in your region. Set `GEMINI_MODEL` to one listed in
-  Vertex AI Studio (or try `GCP_LOCATION=global`).
+- **`fell back to offline engine: ... 404 NOT_FOUND ... model`**: that model
+  isn't available to your account or region. The error message usually names
+  the replacement; set `GEMINI_MODEL` to it (or to one listed in AI Studio /
+  Vertex AI Studio). On Vertex AI, also try `GCP_LOCATION=global`.
 - **`PermissionDenied`**: enable the Vertex AI API on the project and make sure
   your account has *Vertex AI User*.
 - **A scenario picks a different fix**: read the justification. If the
   reasoning is sound, update `EXPECTED_FIX` in the script; if not, tune the
   prompts in `agent/adk_pipeline.py`. You can also try a stronger diagnosis model:
-  `GEMINI_DIAGNOSIS_MODEL=gemini-2.5-pro`.
+  `GEMINI_DIAGNOSIS_MODEL=<a Pro model listed in AI Studio>`.
 
 ## Fast path: Cloud Run + Gemini + Firestore
 
@@ -65,7 +66,7 @@ gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --ro
 # Build from source and deploy (run from the repo root)
 gcloud run deploy autoops-agent --source . --region $REGION \
   --allow-unauthenticated --min-instances 1 --max-instances 2 --timeout 300 \
-  --set-env-vars "USE_REAL_GEMINI=true,GCP_PROJECT=$PROJECT,GCP_LOCATION=$REGION,GEMINI_MODEL=gemini-2.5-flash,MOCK_TOOLS=true,STORE_BACKEND=firestore"
+  --set-env-vars "USE_REAL_GEMINI=true,GCP_PROJECT=$PROJECT,GCP_LOCATION=$REGION,GEMINI_MODEL=gemini-3.8-flash,MOCK_TOOLS=true,STORE_BACKEND=firestore"
 ```
 
 Open the printed service URL. It redirects to the dashboard at `/ui`, and the

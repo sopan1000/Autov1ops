@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 from typing import Any, List, Literal, Union
 
 from google.adk.agents import LlmAgent, SequentialAgent
@@ -37,10 +38,11 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 from .agents.remediator import FIX_CATALOG, catalog_for_prompt
+from .models import DEFAULT_GEMINI_MODEL
 from .tools import deploy_source, k8s_source, log_source, metrics_source, runbook_search
 
 APP_NAME = "autoops"
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 GEMINI_DIAGNOSIS_MODEL = os.getenv("GEMINI_DIAGNOSIS_MODEL", GEMINI_MODEL)
 
 ModelLike = Union[str, BaseLlm]
@@ -199,23 +201,54 @@ def build_incident_pipeline(store, model: ModelLike | None = None,
 # Running agents
 # ---------------------------------------------------------------------------
 
+AGENT_TIMEOUT_SECONDS = float(os.getenv("AGENT_TIMEOUT_SECONDS", "180"))
+
+_loop: asyncio.AbstractEventLoop | None = None
+_loop_lock = threading.Lock()
+
+
+def _agent_loop() -> asyncio.AbstractEventLoop:
+    """One long-lived event loop on a background thread for all agent runs.
+
+    A fresh asyncio.run() per request closes its loop while the Gemini
+    client still has HTTP connections to clean up, which floods the logs
+    with "Event loop is closed" errors (notably on Windows). Keeping one loop
+    alive avoids that and lets connections be reused.
+    """
+    global _loop
+    with _loop_lock:
+        if _loop is None or _loop.is_closed():
+            _loop = asyncio.new_event_loop()
+            threading.Thread(target=_loop.run_forever, name="autoops-adk-loop", daemon=True).start()
+        return _loop
+
+
 async def _run_agent_async(agent, state: dict, message: str):
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    session = await runner.session_service.create_session(app_name=APP_NAME, user_id="autoops", state=state)
-    events = []
-    async for event in runner.run_async(
-        user_id="autoops",
-        session_id=session.id,
-        new_message=types.Content(role="user", parts=[types.Part(text=message)]),
-    ):
-        events.append(event)
-    final = await runner.session_service.get_session(app_name=APP_NAME, user_id="autoops", session_id=session.id)
-    return dict(final.state), events
+    try:
+        session = await runner.session_service.create_session(app_name=APP_NAME, user_id="autoops", state=state)
+        events = []
+        async for event in runner.run_async(
+            user_id="autoops",
+            session_id=session.id,
+            new_message=types.Content(role="user", parts=[types.Part(text=message)]),
+        ):
+            events.append(event)
+        final = await runner.session_service.get_session(app_name=APP_NAME, user_id="autoops", session_id=session.id)
+        return dict(final.state), events
+    finally:
+        await runner.close()
 
 
 def _run_agent(agent, state: dict, message: str):
-    # API handlers are sync and run in a worker thread, so a fresh loop is safe.
-    return asyncio.run(_run_agent_async(agent, state, message))
+    """Run an agent from sync code (API handlers, scripts). Raises TimeoutError
+    if Gemini doesn't finish in time; callers fall back to the offline engine."""
+    future = asyncio.run_coroutine_threadsafe(_run_agent_async(agent, state, message), _agent_loop())
+    try:
+        return future.result(timeout=AGENT_TIMEOUT_SECONDS)
+    except TimeoutError:
+        future.cancel()
+        raise TimeoutError(f"Gemini agents did not finish within {AGENT_TIMEOUT_SECONDS:.0f}s")
 
 
 def _event_trace(events) -> List[tuple]:

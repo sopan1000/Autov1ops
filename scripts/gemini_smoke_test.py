@@ -8,7 +8,7 @@ Usage (from the repo root), with ONE of:
   gcloud auth application-default login
   GCP_PROJECT=your-project GCP_LOCATION=us-central1 python scripts/gemini_smoke_test.py
 
-Optional: GEMINI_MODEL=gemini-2.5-flash (default), GEMINI_DIAGNOSIS_MODEL=gemini-2.5-pro
+Optional: GEMINI_MODEL=gemini-3.8-flash (default), GEMINI_DIAGNOSIS_MODEL=<a Pro model listed in AI Studio>
 
 Exits non-zero if any scenario fell back to the offline engine or picked a
 different fix than expected. Run it before recording the demo video.
