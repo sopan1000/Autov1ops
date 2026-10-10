@@ -20,8 +20,9 @@ planner that picks a fix from a fixed safe list. AI proposes, a human
 approves, nothing runs without a yes."
 
 **0:45–1:40: Break something**
-Click **db exhaustion** on the dashboard.
-- Open the reasoning trace: point at the **tool calls**. "It decided to
+Click **Simulate incident → API error rate spike**.
+- Point at the **lifecycle rail**: alert to proposed fix in seconds.
+- Open the **Investigation** tab: point at the **tool calls**. "It decided to
   check deploys, then logs, then connection metrics."
 - Read the root cause: the *worker* leaked connections and took down the
   *api*. "It found the upstream cause, not the symptom."
@@ -29,11 +30,17 @@ Click **db exhaustion** on the dashboard.
 - Show the resolution verified and the postmortem written. Point at the timer.
 
 **1:40–2:20: The unseen incident (your strongest moment)**
-Click **cert expiry**. "We never wrote a rule for this one." Show Gemini
+Simulate **Checkout returning 502s** (tagged "Needs Gemini"). "We never wrote a rule for this one." Show Gemini
 diagnosing the expired client certificate from the deploy history and TLS
 errors, and choosing to roll back the api. Optional: show the same scenario
 with Gemini off, where it simply escalates to a human. That contrast is the
 whole case for Gen AI here.
+
+**Optional, if time allows: knowing when not to act**
+Simulate **Checkout returning 503s**. AutoOps finds that the payment provider
+is down, nothing on your side changed, and escalates without touching
+anything. "Most AI ops tools would roll something back here. Ours knows
+there's nothing safe to change."
 
 **2:20–2:40: Ask AutoOps**
 Type "Why not just restart the api?" and show the answer: a restart would

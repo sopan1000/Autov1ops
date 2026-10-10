@@ -1,0 +1,47 @@
+{
+  "scenario": "stuck_worker",
+  "alert_summary": "worker service: job queue depth 4,200 and climbing, throughput dropped to zero",
+  "logs": [
+    {"timestamp": "2026-10-14T03:00:00Z", "service": "worker", "level": "INFO", "message": "heartbeat: 118 jobs processed in last 5 minutes, queue depth 12"},
+    {"timestamp": "2026-10-14T03:12:41Z", "service": "worker", "level": "WARN", "message": "thread worker-7 acquired lock 'job_registry' and has not released it"},
+    {"timestamp": "2026-10-14T03:15:00Z", "service": "worker", "level": "WARN", "message": "heartbeat: 0 jobs processed in last 5 minutes, queue depth 640"},
+    {"timestamp": "2026-10-14T03:20:00Z", "service": "worker", "level": "WARN", "message": "thread pool saturated: 16/16 threads blocked waiting on lock 'job_registry' held by worker-7"},
+    {"timestamp": "2026-10-14T03:30:00Z", "service": "worker", "level": "WARN", "message": "heartbeat: 0 jobs processed in last 5 minutes, queue depth 2,310"},
+    {"timestamp": "2026-10-14T03:45:00Z", "service": "worker", "level": "WARN", "message": "heartbeat: 0 jobs processed in last 5 minutes, queue depth 4,205"},
+    {"timestamp": "2026-10-14T03:45:02Z", "service": "worker", "level": "INFO", "message": "liveness probe /healthz 200 (process alive)"}
+  ],
+  "metrics": [
+    {"name": "job_queue_depth", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T03:00:00Z", "value": 12},
+      {"timestamp": "2026-10-14T03:15:00Z", "value": 640},
+      {"timestamp": "2026-10-14T03:45:00Z", "value": 4205}
+    ]},
+    {"name": "jobs_processed_per_min", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T03:00:00Z", "value": 23.6},
+      {"timestamp": "2026-10-14T03:15:00Z", "value": 0},
+      {"timestamp": "2026-10-14T03:45:00Z", "value": 0}
+    ]},
+    {"name": "worker_cpu_percent", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T03:00:00Z", "value": 46},
+      {"timestamp": "2026-10-14T03:45:00Z", "value": 1}
+    ]},
+    {"name": "worker_memory_bytes", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T03:00:00Z", "value": 210000000},
+      {"timestamp": "2026-10-14T03:45:00Z", "value": 212000000}
+    ]},
+    {"name": "pod_restart_count", "resource": "worker", "points": [
+      {"timestamp": "2026-10-14T03:00:00Z", "value": 0},
+      {"timestamp": "2026-10-14T03:45:00Z", "value": 0}
+    ]}
+  ],
+  "deploys": [
+    {"service": "worker", "image_tag": "worker:v2.2", "timestamp": "2026-10-08T15:22:00Z", "author": "dev", "commit_message": "fix: tune backoff timing"}
+  ],
+  "k8s_events": [],
+  "expected": {
+    "note": "Last deploy was six days ago and ran healthily until 03:12. Never read by the agents.",
+    "root_cause": "Thread worker-7 is holding the job_registry lock and never released it; all 16 worker threads are blocked, so throughput is zero while the process stays alive. Not caused by a deploy, memory or CPU.",
+    "fix_id": "restart_worker",
+    "why": "Restarting clears the wedged in-process lock. A rollback would redeploy the same six-day-old version that ran fine for days."
+  }
+}

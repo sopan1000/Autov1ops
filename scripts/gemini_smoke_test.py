@@ -31,7 +31,9 @@ EXPECTED_FIX = {
     "oom_leak": "rollback_worker",
     "db_exhaustion": "rollback_worker",
     "bad_config": "restore_api_config",
-    "cert_expiry": "rollback_api",  # the unseen incident type
+    "cert_expiry": "rollback_api",       # outside the offline engine's rules
+    "vendor_outage": "escalate",         # external outage: nothing safe to change
+    "stuck_worker": "restart_worker",    # wedged process, no bad deploy
 }
 
 

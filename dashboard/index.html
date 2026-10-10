@@ -2,33 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>AutoOps - Incident Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoOps incident console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230E7C86'/%3E%3Cpath d='M9 22l5-12 4 8 2-4 3 8' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
-  <header>
-    <div>
-      <h1>🤖 AutoOps</h1>
-      <div class="sub">AI on-call engineer · Gemini + Agent Development Kit on Google Cloud</div>
-    </div>
-    <div class="header-right">
-      <span id="engine" class="engine">AI: …</span>
-      <span class="sub" id="conn-status">connecting…</span>
-    </div>
-  </header>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M9 22l5-12 4 8 2-4 3 8"/></svg>
+        <div>
+          <div class="brand-name">AutoOps</div>
+          <div class="brand-sub">AI on-call engineer</div>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Main">
+        <button class="nav-item active" data-view="incidents">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l7.5 13H2.5z"/><path d="M10 8v3.5M10 13.6v.1"/></svg>
+          Incidents <span class="nav-count" id="nav-open" hidden></span>
+        </button>
+        <button class="nav-item" data-view="runbooks">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9.5l2.5 2.5v10.5H4z"/><path d="M7 8h6M7 11h6M7 14h4"/></svg>
+          Runbooks <span class="nav-count muted" id="nav-runbooks" hidden></span>
+        </button>
+      </nav>
+      <div class="engine" id="engine">
+        <span class="engine-dot"></span>
+        <div>
+          <div class="engine-name" id="engine-name">Connecting…</div>
+          <div class="engine-sub" id="engine-sub"></div>
+        </div>
+      </div>
+    </aside>
 
-  <main>
-    <div class="stat-row" id="stats"></div>
+    <main class="main">
+      <section class="view" id="view-incidents">
+        <header class="topbar">
+          <div>
+            <h1>Incidents</h1>
+            <div class="stats" id="stats"></div>
+          </div>
+          <div class="simulate">
+            <button class="btn btn-primary" id="simulate-btn" aria-haspopup="true" aria-expanded="false">
+              Simulate incident
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>
+            </button>
+            <div class="menu" id="simulate-menu" role="menu" hidden></div>
+          </div>
+        </header>
 
-    <div class="trigger-bar" id="triggers">
-      <span class="sub" style="align-self:center;">Break something:</span>
-    </div>
+        <div class="workspace">
+          <div class="list" id="incident-list" aria-label="Incidents"></div>
+          <article class="detail" id="detail" aria-live="polite"></article>
+        </div>
+      </section>
 
-    <div id="pending"></div>
-    <div id="empty" class="empty">No incidents yet — trigger a scenario above.</div>
-    <div id="incidents"></div>
-  </main>
+      <section class="view" id="view-runbooks" hidden>
+        <header class="topbar">
+          <div>
+            <h1>Runbooks</h1>
+            <p class="page-sub">Written by AutoOps after every verified fix. The investigator searches these on new incidents.</p>
+          </div>
+        </header>
+        <div class="runbooks" id="runbooks"></div>
+      </section>
+    </main>
+  </div>
 
   <script src="config.js"></script>
   <script src="app.js"></script>

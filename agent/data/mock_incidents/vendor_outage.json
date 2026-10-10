@@ -1,0 +1,43 @@
+{
+  "scenario": "vendor_outage",
+  "alert_summary": "api service: checkout error rate 68%, mostly 503s on POST /checkout",
+  "logs": [
+    {"timestamp": "2026-10-14T16:58:12Z", "service": "api", "level": "WARN", "message": "POST /checkout: PayLane API (api.paylane.example) responded 503 Service Unavailable after 2140ms"},
+    {"timestamp": "2026-10-14T16:59:30Z", "service": "api", "level": "ERROR", "message": "POST /checkout 503: payment authorization failed: PayLane API returned 503 Service Unavailable (retry 3/3)"},
+    {"timestamp": "2026-10-14T17:00:05Z", "service": "api", "level": "WARN", "message": "PayLane status page reports: Major outage - card authorizations failing in ap-south and ap-southeast (PayLane incident #4411, since 16:55 UTC)"},
+    {"timestamp": "2026-10-14T17:00:40Z", "service": "api", "level": "ERROR", "message": "POST /checkout 503: payment authorization failed: PayLane API returned 503 Service Unavailable (retry 3/3)"},
+    {"timestamp": "2026-10-14T17:01:00Z", "service": "api", "level": "INFO", "message": "GET /orders/1 200 (11ms)"},
+    {"timestamp": "2026-10-14T17:01:02Z", "service": "api", "level": "INFO", "message": "GET /users/42 200 (9ms)"},
+    {"timestamp": "2026-10-14T17:01:10Z", "service": "worker", "level": "INFO", "message": "processed job job_9310"}
+  ],
+  "metrics": [
+    {"name": "checkout_error_rate", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T16:50:00Z", "value": 0.3},
+      {"timestamp": "2026-10-14T16:58:00Z", "value": 41.0},
+      {"timestamp": "2026-10-14T17:01:00Z", "value": 68.2}
+    ]},
+    {"name": "api_error_rate_non_checkout", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T16:50:00Z", "value": 0.2},
+      {"timestamp": "2026-10-14T17:01:00Z", "value": 0.3}
+    ]},
+    {"name": "paylane_p95_latency_ms", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T16:50:00Z", "value": 310},
+      {"timestamp": "2026-10-14T17:01:00Z", "value": 2140}
+    ]},
+    {"name": "pod_restart_count", "resource": "api", "points": [
+      {"timestamp": "2026-10-14T16:50:00Z", "value": 0},
+      {"timestamp": "2026-10-14T17:01:00Z", "value": 0}
+    ]}
+  ],
+  "deploys": [
+    {"service": "api", "image_tag": "api:v4.1", "timestamp": "2026-10-11T10:05:00Z", "author": "dev", "commit_message": "feat: add order history pagination"},
+    {"service": "worker", "image_tag": "worker:v2.2", "timestamp": "2026-10-09T15:22:00Z", "author": "dev", "commit_message": "fix: tune backoff timing"}
+  ],
+  "k8s_events": [],
+  "expected": {
+    "note": "No change on our side and nothing in our stack is broken. Never read by the agents.",
+    "root_cause": "PayLane, the external payment provider, has a regional outage (their incident #4411). Card authorizations return 503; our pods, other routes and deploys are healthy.",
+    "fix_id": "escalate",
+    "why": "No allowlisted action fixes a third-party outage; rollback or restart would change nothing and add risk."
+  }
+}
