@@ -48,6 +48,7 @@ def _run_gemini(incident: Incident, store, model) -> Tuple[Incident, dict]:
         incident.log(agent, action, detail)
     if result["findings"]:
         incident.log("investigator", "findings", result["findings"][:4000])
+    incident.log("diagnoser", "gemini_calls", f"{result['gemini_calls']} Gemini requests for this incident")
 
     d = result["diagnosis"]
     incident.diagnosis = Diagnosis(

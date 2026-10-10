@@ -10,6 +10,13 @@ Usage (from the repo root), with ONE of:
 
 Optional: GEMINI_MODEL=gemini-3.8-flash (default), GEMINI_DIAGNOSIS_MODEL=<a Pro model listed in AI Studio>
 
+Run a subset to save quota:  python scripts/gemini_smoke_test.py cert_expiry oom_leak
+
+Free tier tips: each incident needs about 4 Gemini requests. If you see 429
+RESOURCE_EXHAUSTED, check your limits at https://aistudio.google.com/rate-limit
+and set GEMINI_RPM to your requests-per-minute limit, or wait for the daily
+quota to reset (midnight Pacific time).
+
 Exits non-zero if any scenario fell back to the offline engine or picked a
 different fix than expected. Run it before recording the demo video.
 """
@@ -37,8 +44,15 @@ def main() -> int:
     os.environ["LOCAL_DB_PATH"] = str(Path(tempfile.mkdtemp()) / "smoke.json")
     from agent.agents import orchestrator
 
+    selected = sys.argv[1:] or list(EXPECTED_FIX)
+    unknown = [s for s in selected if s not in EXPECTED_FIX]
+    if unknown:
+        print(f"Unknown scenario(s): {', '.join(unknown)}. Choose from: {', '.join(EXPECTED_FIX)}")
+        return 2
+
     failures = 0
-    for scenario, expected in EXPECTED_FIX.items():
+    for scenario in selected:
+        expected = EXPECTED_FIX[scenario]
         start = time.time()
         inc = orchestrator.handle_alert(scenario)
         took = time.time() - start
@@ -57,8 +71,13 @@ def main() -> int:
             print(f"   why: {inc.proposed_fix.justification}")
         tools = [t.detail.split("(")[0] for t in inc.trace if t.action == "tool_call"]
         print(f"   tools used: {', '.join(tools) or 'none'}")
+        calls = next((t.detail for t in inc.trace if t.action == "gemini_calls"), "")
+        if calls:
+            print(f"   {calls}")
+        if fell_back and "429" in err:
+            print("   -> quota hit: see https://aistudio.google.com/rate-limit, then set GEMINI_RPM or wait")
 
-    print(f"\n{len(EXPECTED_FIX) - failures}/{len(EXPECTED_FIX)} scenarios passed")
+    print(f"\n{len(selected) - failures}/{len(selected)} scenarios passed")
     return 1 if failures else 0
 
 

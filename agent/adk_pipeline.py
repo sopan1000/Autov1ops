@@ -28,10 +28,14 @@ import asyncio
 import json
 import os
 import threading
+import time
+from collections import deque
 from typing import Any, List, Literal, Union
 
 from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.models.base_llm import BaseLlm
+from google.adk.agents.run_config import RunConfig
+from google.adk.models.google_llm import Gemini
 from google.adk.runners import InMemoryRunner
 from google.adk.tools import ToolContext
 from google.genai import types
@@ -46,6 +50,49 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 GEMINI_DIAGNOSIS_MODEL = os.getenv("GEMINI_DIAGNOSIS_MODEL", GEMINI_MODEL)
 
 ModelLike = Union[str, BaseLlm]
+
+# Quota-friendly defaults (the Gemini free tier allows only a few requests a minute).
+GEMINI_RPM = int(os.getenv("GEMINI_RPM", "0"))                      # client-side cap; 0 = off
+GEMINI_THINKING_LEVEL = os.getenv("GEMINI_THINKING_LEVEL", "low")   # minimal|low|medium|high, "" = model default
+MAX_CALLS_PER_INCIDENT = int(os.getenv("GEMINI_MAX_CALLS_PER_INCIDENT", "8"))
+
+
+def _gemini(model: ModelLike) -> ModelLike:
+    """Wrap a model name in ADK's Gemini class with retry/back-off on 429 and 503."""
+    if not isinstance(model, str):
+        return model
+    return Gemini(model=model, retry_options=types.HttpRetryOptions(
+        attempts=4, initial_delay=5.0, max_delay=60.0, http_status_codes=[429, 503]))
+
+
+def _content_config(temperature: float) -> types.GenerateContentConfig:
+    config = types.GenerateContentConfig(temperature=temperature)
+    if GEMINI_THINKING_LEVEL:
+        config.thinking_config = types.ThinkingConfig(thinking_level=GEMINI_THINKING_LEVEL.upper())
+    return config
+
+
+_call_times: deque = deque()
+_rate_lock: asyncio.Lock | None = None
+
+
+async def _before_model(callback_context, llm_request):
+    """Runs before every Gemini request: counts calls and enforces GEMINI_RPM."""
+    callback_context.state["gemini_calls"] = int(callback_context.state.get("gemini_calls", 0)) + 1
+    if GEMINI_RPM <= 0:
+        return None
+    global _rate_lock
+    if _rate_lock is None:
+        _rate_lock = asyncio.Lock()
+    async with _rate_lock:
+        while True:
+            now = time.monotonic()
+            while _call_times and now - _call_times[0] >= 60:
+                _call_times.popleft()
+            if len(_call_times) < GEMINI_RPM:
+                _call_times.append(now)
+                return None
+            await asyncio.sleep(60 - (now - _call_times[0]) + 0.1)
 
 
 def configure_gemini_env() -> None:
@@ -126,9 +173,11 @@ def _make_tools(store) -> list:
 
 INVESTIGATOR_PROMPT = """You are the Investigator agent in AutoOps, an AI on-call engineer.
 An alert has fired. Investigate it like a senior SRE:
-- Pull evidence with your tools. Start broad (all logs, all metrics, recent deploys, cluster events),
-  then narrow down. Always check recent deploys and config changes - most incidents follow a change.
-- Search past runbooks for similar symptoms.
+- In your FIRST response, call all five tools together in parallel: query_logs with service "",
+  get_metrics with metric "", get_recent_deploys with service "", get_cluster_events, and
+  search_runbooks with keywords from the alert. That one round is usually enough.
+- Make a second round of calls only if something specific is still missing. Never repeat a call
+  with the same arguments. Always weigh recent deploys and config changes: most incidents follow a change.
 - Correlate timestamps: what changed just before the symptoms started?
 - Do not stop at the first symptom; find the upstream cause (a failing api may be starved by the worker).
 Finish with a concise findings report: timeline, key evidence quoted verbatim with timestamps,
@@ -163,32 +212,35 @@ def build_incident_pipeline(store, model: ModelLike | None = None,
     diagnosis_model = diagnosis_model or (model if not isinstance(model, str) else GEMINI_DIAGNOSIS_MODEL)
     investigator = LlmAgent(
         name="investigator",
-        model=model,
+        model=_gemini(model),
         description="Gathers and correlates incident evidence using observability tools.",
         instruction=INVESTIGATOR_PROMPT,
         tools=_make_tools(store),
         output_key="findings",
-        generate_content_config=types.GenerateContentConfig(temperature=0.2),
+        generate_content_config=_content_config(0.2),
+        before_model_callback=_before_model,
     )
     diagnoser = LlmAgent(
         name="diagnoser",
-        model=diagnosis_model,
+        model=_gemini(diagnosis_model),
         description="Produces a structured root-cause diagnosis from the findings.",
         instruction=_diagnoser_prompt,
         include_contents="none",
         output_schema=DiagnosisOutput,
         output_key="diagnosis",
-        generate_content_config=types.GenerateContentConfig(temperature=0.1),
+        generate_content_config=_content_config(0.1),
+        before_model_callback=_before_model,
     )
     planner = LlmAgent(
         name="remediation_planner",
-        model=model,
+        model=_gemini(model),
         description="Chooses one allowlisted fix (or escalation) and justifies it.",
         instruction=_planner_prompt,
         include_contents="none",
         output_schema=PlanOutput,
         output_key="plan",
-        generate_content_config=types.GenerateContentConfig(temperature=0.1),
+        generate_content_config=_content_config(0.1),
+        before_model_callback=_before_model,
     )
     return SequentialAgent(
         name="autoops_incident_pipeline",
@@ -223,7 +275,7 @@ def _agent_loop() -> asyncio.AbstractEventLoop:
         return _loop
 
 
-async def _run_agent_async(agent, state: dict, message: str):
+async def _run_agent_async(agent, state: dict, message: str, max_calls: int):
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
     try:
         session = await runner.session_service.create_session(app_name=APP_NAME, user_id="autoops", state=state)
@@ -232,6 +284,7 @@ async def _run_agent_async(agent, state: dict, message: str):
             user_id="autoops",
             session_id=session.id,
             new_message=types.Content(role="user", parts=[types.Part(text=message)]),
+            run_config=RunConfig(max_llm_calls=max_calls),
         ):
             events.append(event)
         final = await runner.session_service.get_session(app_name=APP_NAME, user_id="autoops", session_id=session.id)
@@ -240,10 +293,10 @@ async def _run_agent_async(agent, state: dict, message: str):
         await runner.close()
 
 
-def _run_agent(agent, state: dict, message: str):
+def _run_agent(agent, state: dict, message: str, max_calls: int = 3):
     """Run an agent from sync code (API handlers, scripts). Raises TimeoutError
     if Gemini doesn't finish in time; callers fall back to the offline engine."""
-    future = asyncio.run_coroutine_threadsafe(_run_agent_async(agent, state, message), _agent_loop())
+    future = asyncio.run_coroutine_threadsafe(_run_agent_async(agent, state, message, max_calls), _agent_loop())
     try:
         return future.result(timeout=AGENT_TIMEOUT_SECONDS)
     except TimeoutError:
@@ -279,7 +332,8 @@ def _as_dict(value: Any) -> dict:
 def investigate(scenario: str, alert: str, store, model: ModelLike | None = None) -> dict:
     """Run the full ADK pipeline. Returns findings, diagnosis, plan and trace lines."""
     pipeline = build_incident_pipeline(store, model=model)
-    state, events = _run_agent(pipeline, {"scenario": scenario, "alert": alert}, f"ALERT: {alert}")
+    state, events = _run_agent(pipeline, {"scenario": scenario, "alert": alert}, f"ALERT: {alert}",
+                               max_calls=MAX_CALLS_PER_INCIDENT)
     diagnosis = DiagnosisOutput(**_as_dict(state.get("diagnosis")))
     plan = PlanOutput(**_as_dict(state.get("plan")))
     return {
@@ -287,13 +341,14 @@ def investigate(scenario: str, alert: str, store, model: ModelLike | None = None
         "diagnosis": diagnosis.model_dump(),
         "plan": plan.model_dump(),
         "trace": _event_trace(events),
+        "gemini_calls": int(state.get("gemini_calls", 0)),
     }
 
 
 def _single_turn_text(name: str, instruction: str, message: str, model: ModelLike | None) -> str:
-    agent = LlmAgent(name=name, model=model or GEMINI_MODEL, instruction=instruction,
-                     generate_content_config=types.GenerateContentConfig(temperature=0.3))
-    _, events = _run_agent(agent, {}, message)
+    agent = LlmAgent(name=name, model=_gemini(model or GEMINI_MODEL), instruction=instruction,
+                     generate_content_config=_content_config(0.3), before_model_callback=_before_model)
+    _, events = _run_agent(agent, {}, message, max_calls=2)
     texts = [p.text for ev in events if ev.content and ev.author == name
              for p in (ev.content.parts or []) if p.text]
     return "\n".join(texts).strip()
