@@ -7,3 +7,5 @@ agent/data/db.json
 *.tfstate.backup
 node_modules/
 .DS_Store
+.venv/
+venv/

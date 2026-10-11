@@ -9,3 +9,5 @@ sandbox
 docs
 tests
 *.zip
+.venv/
+venv/
