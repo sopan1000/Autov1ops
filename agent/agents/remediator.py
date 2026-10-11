@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..guardrails import scrub
 from ..models import Incident, IncidentStatus, ProposedFix, RiskLevel
 
 FIX_CATALOG = {
@@ -124,8 +125,8 @@ def run(incident: Incident, store, plan: Optional[dict] = None) -> Incident:
         risk=template["risk"],
         rollback_plan=template["rollback_plan"],
         auto_approvable=template["auto_approvable"],
-        justification=justification[:2000],
-        alternatives_rejected=[a[:500] for a in plan.get("alternatives_rejected", [])][:5],
+        justification=scrub(justification)[:2000],
+        alternatives_rejected=[scrub(a)[:500] for a in plan.get("alternatives_rejected", [])][:5],
     )
     incident.proposed_fix = fix
 

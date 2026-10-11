@@ -4,6 +4,7 @@ a Pub/Sub push subscription wired to a Cloud Monitoring alert policy (see
 infra/terraform/pubsub.tf). Its only job is to turn an alert into an
 Incident record so the rest of the pipeline has something to work with.
 """
+from ..guardrails import scrub
 from ..models import Incident, IncidentStatus
 
 SCENARIO_ALERTS = {
@@ -16,11 +17,13 @@ SCENARIO_ALERTS = {
     # Rollback is the wrong answer for these two.
     "vendor_outage": "api service: checkout error rate 68%, mostly 503s on POST /checkout",
     "stuck_worker": "worker service: job queue depth 4,200 and climbing, throughput dropped to zero",
+    # Guardrails demo: logs leak secrets and PII and carry a prompt-injection attempt.
+    "poisoned_logs": "worker service: payment reconciliation failing, pods restarting",
 }
 
 
 def watch(scenario: str, alert_summary: str = "", source_event_id: str | None = None) -> Incident:
-    summary = alert_summary or SCENARIO_ALERTS.get(scenario, f"Unrecognized scenario '{scenario}'")
+    summary = scrub(alert_summary or SCENARIO_ALERTS.get(scenario, f"Unrecognized scenario '{scenario}'"))
     incident = Incident(scenario=scenario, alert_summary=summary, source_event_id=source_event_id, status=IncidentStatus.DETECTED)
     incident.log("watcher", "alert_received", f"Alert received via Pub/Sub: {summary}")
     return incident

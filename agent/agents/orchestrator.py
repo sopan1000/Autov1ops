@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 
-from .. import offline_engine
+from .. import guardrails, offline_engine
 from ..models import IncidentStatus, QAEntry
 from ..store import get_store
 from . import diagnoser, executor, remediator, scribe, watcher
@@ -30,6 +30,10 @@ def _auto_remediation_allowed(incident) -> bool:
     """Optional policy: apply low-risk fixes without a human when Gemini is
     very confident. Off by default so the demo shows the approval step."""
     if os.getenv("AUTO_REMEDIATE", "false").lower() != "true":
+        return False
+    if incident.guardrails.injection_flags:
+        incident.log("orchestrator", "auto_approval_blocked",
+                     "Auto-remediation skipped: the evidence contains a possible prompt-injection attempt")
         return False
     threshold = float(os.getenv("AUTO_REMEDIATE_MIN_CONFIDENCE", "0.9"))
     fix, diag = incident.proposed_fix, incident.diagnosis
@@ -94,6 +98,9 @@ def handle_question(incident_id: str, question: str, model=None):
     if not incident:
         raise IncidentNotFoundError(f"No incident found with id '{incident_id}'")
 
+    question, masked = guardrails.mask_text(question)
+    if masked:
+        incident.log("guardrails", "data_masked", f"{guardrails.summarize(dict(masked))} in an engineer's question")
     answer, engine = "", offline_engine.ENGINE_LABEL
     if diagnoser.gemini_enabled() or model is not None:
         try:
@@ -107,6 +114,6 @@ def handle_question(incident_id: str, question: str, model=None):
     if not answer:
         answer, engine = offline_engine.answer(incident, question), offline_engine.ENGINE_LABEL
 
-    incident.qa.append(QAEntry(question=question[:1000], answer=answer[:4000], engine=engine))
+    incident.qa.append(QAEntry(question=question[:1000], answer=guardrails.scrub(answer)[:4000], engine=engine))
     store.save_incident(incident)
     return incident.qa[-1]

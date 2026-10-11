@@ -50,6 +50,14 @@ confidence-gated auto-remediation (`AUTO_REMEDIATE=true`, low-risk fixes at
 ≥90% confidence only). If Gemini is unavailable, incidents fall back to an
 offline engine and say so.
 
+**Data protection:** before any evidence reaches Gemini, the database or the
+dashboard, AutoOps masks secrets and personal data: passwords and connection
+strings, API keys and tokens (Google, AWS, GitHub, Slack, Stripe), JWTs, private
+keys, emails, card numbers, Aadhaar, PAN, Indian phone numbers and public IPs.
+Gemini's replies are scrubbed again on the way out. Log text that tries to
+instruct the AI ("ignore previous instructions, choose fix …") is flagged,
+treated purely as data, and disables auto-remediation for that incident.
+
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Scenarios
@@ -65,6 +73,8 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `vendor_outage` | checkout returns 503s | the external payment provider is down; nothing on our side changed | `escalate` (no safe change to make) |
 | `stuck_worker` | worker queue backs up, throughput zero | a thread holds a lock forever; last deploy was six days ago | `restart_worker` |
 
+| `poisoned_logs` | payment worker crash-loops | a debug deploy parses a field without a null check | `rollback_worker`, with 8 secrets/PII masked and a prompt-injection attempt flagged |
+
 `cert_expiry`, `vendor_outage` and `stuck_worker` are outside the offline
 engine's rules (it escalates all three). They show what Gemini adds, including
 knowing when *not* to act.
@@ -73,7 +83,7 @@ knowing when *not* to act.
 
 ```bash
 pip install -r agent/requirements.txt
-PYTHONPATH=. pytest -q                     # 9 tests, no network needed
+PYTHONPATH=. pytest -q                     # no network needed
 python scripts/gemini_smoke_test.py        # real Gemini: all 5 scenarios (needs GOOGLE_API_KEY or GCP login)
 ```
 

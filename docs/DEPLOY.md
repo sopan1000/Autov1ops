@@ -31,7 +31,7 @@ gcloud auth application-default login
 GCP_PROJECT=your-project GCP_LOCATION=us-central1 python scripts/gemini_smoke_test.py
 ```
 
-You want `5/5 scenarios passed`. Each incident should take roughly 4 Gemini
+You want `8/8 scenarios passed`. Each incident should take roughly 4 Gemini
 requests (the output shows the count). To save quota while iterating, run
 just the scenarios you care about: `python scripts/gemini_smoke_test.py cert_expiry`. For each scenario it prints the root cause,
 the chosen fix, Gemini's justification and which tools the investigator called.
