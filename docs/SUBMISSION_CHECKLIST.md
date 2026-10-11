@@ -21,12 +21,13 @@ Re-check before submitting in case requirements have changed.
 - [ ] Everything in **English**
 
 ## Verify before recording and submitting
-- [ ] `PYTHONPATH=. pytest -q` passes (9 tests)
-- [ ] `scripts/gemini_smoke_test.py` passes 5/5 against real Gemini
+- [ ] `PYTHONPATH=. pytest -q` passes
+- [ ] `scripts/gemini_smoke_test.py` passes 8/8 against real Gemini
 - [ ] Deployed `/health` shows `"ai_engine": "<model> via ADK"`, not "offline"
 - [ ] On the deployed dashboard, every scenario diagnoses correctly with no
       `gemini unavailable` step in its trace
 - [ ] `cert_expiry` gets `rollback_api` with Gemini on
+- [ ] `poisoned_logs` shows "8 sensitive values masked" and the prompt-injection banner
 - [ ] Approve, Reject and Ask AutoOps all work on the deployed URL
 - [ ] The incident list survives a redeploy (proves Firestore is in use)
 - [ ] The GitHub repo `main` branch contains this code (not the original scaffold)

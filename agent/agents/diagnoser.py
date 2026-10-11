@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from typing import Optional, Tuple
 
-from .. import offline_engine
+from .. import guardrails, offline_engine
 from ..models import Diagnosis, Incident, IncidentStatus
 from ..tools import deploy_source, k8s_source, log_source, metrics_source, runbook_search
 
@@ -50,13 +50,16 @@ def _run_gemini(incident: Incident, store, model) -> Tuple[Incident, dict]:
         incident.log("investigator", "findings", result["findings"][:4000])
     incident.log("diagnoser", "gemini_calls", f"{result['gemini_calls']} Gemini requests for this incident")
 
+    record_guardrails(incident, result["guard_masked"], result["guard_injection"])
+
     d = result["diagnosis"]
+    s = guardrails.scrub  # model output is scrubbed too, in case it echoes anything sensitive
     incident.diagnosis = Diagnosis(
-        root_cause=d["root_cause"][:4000],
+        root_cause=s(d["root_cause"])[:4000],
         root_cause_type=(d["root_cause_type"] or "unknown")[:64],
         confidence=d["confidence"],
-        evidence=[e[:1000] for e in d["evidence"]][:20],
-        hypotheses_rejected=[h[:1000] for h in d["hypotheses_rejected"]][:20],
+        evidence=[s(e)[:1000] for e in d["evidence"]][:20],
+        hypotheses_rejected=[s(h)[:1000] for h in d["hypotheses_rejected"]][:20],
     )
     _log_diagnosis(incident)
     return incident, result["plan"]
@@ -79,9 +82,28 @@ def _run_offline(incident: Incident, store) -> Incident:
                      f"Found {len(past_runbooks)} related past incident(s) in the runbook library")
 
     context = _build_context(incident, logs, metrics, deploys, k8s_events, past_runbooks)
+    context, masked = guardrails.mask_text(context)
+    record_guardrails(incident, dict(masked), guardrails.detect_injection(context))
     incident.diagnosis = offline_engine.diagnose(context)
     _log_diagnosis(incident)
     return incident
+
+
+def record_guardrails(incident: Incident, masked: dict, injection: list) -> None:
+    """Store what the guardrails did and show it in the trace."""
+    report = incident.guardrails
+    for kind, n in masked.items():
+        report.masked[kind] = report.masked.get(kind, 0) + int(n)
+    for flag in injection:
+        if flag not in report.injection_flags:
+            report.injection_flags.append(guardrails.scrub(flag)[:200])
+    incident.log("guardrails", "data_masked",
+                 f"{guardrails.summarize(report.masked)} before the evidence reached the AI, database or dashboard")
+    if report.injection_flags:
+        incident.log("guardrails", "injection_detected",
+                     f"Possible prompt injection in the evidence ({len(report.injection_flags)} line(s)). "
+                     "Treated as data, not instructions; auto-remediation disabled for this incident. "
+                     f"First: {report.injection_flags[0]}")
 
 
 def _log_diagnosis(incident: Incident) -> None:

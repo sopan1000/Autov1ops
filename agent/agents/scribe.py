@@ -6,7 +6,7 @@ time" loop.
 """
 from __future__ import annotations
 
-from .. import offline_engine
+from .. import guardrails, offline_engine
 from ..models import Incident, Runbook
 from .diagnoser import gemini_enabled
 
@@ -28,7 +28,7 @@ def run(incident: Incident, store, model=None) -> Incident:
             text = adk_pipeline.write_postmortem(record, model=model)
         except Exception as exc:  # noqa: BLE001
             incident.log("scribe", "gemini_unavailable", f"Postmortem via Gemini failed ({type(exc).__name__}); using template")
-    incident.postmortem = text or offline_engine.postmortem(incident)
+    incident.postmortem = guardrails.scrub(text or offline_engine.postmortem(incident))
 
     runbook = Runbook(
         incident_id=incident.id,

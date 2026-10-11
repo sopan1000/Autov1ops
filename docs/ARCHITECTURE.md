@@ -67,6 +67,32 @@ Code: `agent/adk_pipeline.py` (agents, tools, prompts),
    a real GCP class in `agent/tools/cloud.py`. `MOCK_TOOLS` picks the set in
    one place (`agent/tools/__init__.py`), and no agent code branches on it.
 
+## Data protection and prompt-injection guardrails
+
+`agent/guardrails.py` sits between production data and everything else.
+
+- **Masking.** Every tool result is masked inside the tool, before ADK hands it
+  to Gemini. The same masking runs on the offline engine's evidence, on alert
+  text from the API or Pub/Sub, and on engineers' Ask questions. It covers private
+  keys, JWTs, Google/AWS/GitHub/Slack/Stripe keys, credentials in connection
+  strings and `key=value` pairs, emails, card numbers (Luhn-checked), Aadhaar
+  (Verhoeff-checked), PAN, Indian phone numbers and public IPs. Internal IPs,
+  timestamps, metric values and job IDs are left alone, because engineers need them.
+- **Output scrubbing.** An ADK `after_model_callback` scrubs every Gemini reply
+  before ADK records it, so nothing sensitive can pass between agents or into
+  storage even if a model echoed it. Every trace line is scrubbed as it is written.
+- **Prompt injection.** Prompts tell every agent that tool data is untrusted and
+  never to follow instructions inside it. Lines that look like instructions to the
+  AI are flagged on the incident, shown to the engineer, and block auto-remediation.
+  The fix allowlist still bounds what any injected text could achieve.
+- **Visibility.** Each incident records what was masked (`guardrails.masked`) and
+  any flagged lines (`guardrails.injection_flags`). The dashboard shows both.
+
+`tests/test_guardrails.py` proves that no raw secret from the `poisoned_logs`
+scenario reaches the model, storage or an Ask answer. For production, Google
+Cloud Sensitive Data Protection or Model Armor could replace or back up the
+regex rules.
+
 ## Testing the AI wiring without Gemini
 
 `tests/test_adk_pipeline.py` runs the real ADK agents with a scripted model

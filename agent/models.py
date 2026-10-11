@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -110,6 +110,12 @@ class ResolutionResult(BaseModel):
     verified_at: Optional[str] = None
 
 
+class GuardrailReport(BaseModel):
+    """What the data-protection guardrails did for one incident."""
+    masked: Dict[str, int] = Field(default_factory=dict)        # type -> count, e.g. {"password": 1}
+    injection_flags: List[str] = Field(default_factory=list)    # evidence lines that tried to instruct the AI
+
+
 class QAEntry(BaseModel):
     question: str
     answer: str
@@ -142,7 +148,9 @@ class Incident(BaseModel):
     ai_engine: str = ""              # which engine diagnosed this incident (shown in the dashboard)
     postmortem: str = ""
     qa: List[QAEntry] = Field(default_factory=list)
+    guardrails: GuardrailReport = Field(default_factory=GuardrailReport)
 
     def log(self, agent: str, action: str, detail: str) -> None:
-        self.trace.append(TraceStep(agent=agent, action=action, detail=detail))
+        from .guardrails import scrub  # local import: guardrails has no model dependencies
+        self.trace.append(TraceStep(agent=agent, action=action, detail=scrub(detail)[:4000] or "-"))
         self.updated_at = now()

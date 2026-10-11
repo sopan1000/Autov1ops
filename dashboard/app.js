@@ -12,7 +12,9 @@ const SCENARIOS = {
   cert_expiry:   { title: "Checkout returning 502s", service: "api" },
   vendor_outage: { title: "Checkout returning 503s", service: "api" },
   stuck_worker:  { title: "Worker queue backing up", service: "worker" },
+  poisoned_logs: { title: "Payment worker crashing", service: "worker" },
 };
+const GUARDRAIL_DEMO = new Set(["poisoned_logs"]);
 const OUTSIDE_RULES = new Set(["cert_expiry", "vendor_outage", "stuck_worker"]);
 const STATUS_LABEL = {
   detected: "Detected", diagnosing: "Investigating", awaiting_approval: "Needs approval",
@@ -20,7 +22,7 @@ const STATUS_LABEL = {
   escalated: "Escalated", rejected: "Fix rejected", failed: "Failed",
 };
 const AGENT_LABEL = {
-  watcher: "Watcher", investigator: "Investigator", diagnoser: "Diagnoser",
+  guardrails: "Guardrails", watcher: "Watcher", investigator: "Investigator", diagnoser: "Diagnoser",
   remediation_planner: "Planner", remediator: "Remediator", orchestrator: "Orchestrator",
   executor: "Executor", scribe: "Scribe", ask_autoops: "Ask AutoOps",
 };
@@ -118,7 +120,8 @@ async function loadScenarios() {
   const item = (k) => `
     <button class="menu-item" role="menuitem" data-scenario="${esc(k)}">
       <span class="menu-title">${esc((SCENARIOS[k] || {}).title || k)}
-        ${OUTSIDE_RULES.has(k) ? '<span class="tag">Needs Gemini</span>' : ""}</span>
+        ${OUTSIDE_RULES.has(k) ? '<span class="tag">Needs Gemini</span>' : ""}
+        ${GUARDRAIL_DEMO.has(k) ? '<span class="tag tag-guard">Secrets + injection</span>' : ""}</span>
       <span class="menu-desc">${esc(alerts[k])}</span>
     </button>`;
   $("simulate-menu").innerHTML =
@@ -220,6 +223,7 @@ function renderList() {
       <span class="row-meta">
         <span class="pill pill-${esc(inc.status)}">${esc(STATUS_LABEL[inc.status] || inc.status)}</span>
         ${esc(serviceOf(inc))}
+        ${(inc.guardrails && inc.guardrails.injection_flags.length) ? '<span class="flag">Injection flagged</span>' : ""}
       </span>
     </button>`).join("");
 }
@@ -278,6 +282,38 @@ function renderRail(inc) {
       </div>`).join("")}
     ${total ? `<div class="rail-total">${total}</div>` : ""}
   </div>`;
+}
+
+const MASK_LABEL = {
+  password: "password", secret: "secret", token: "token", jwt: "JWT", google_api_key: "Google API key",
+  aws_access_key: "AWS key", github_token: "GitHub token", slack_token: "Slack token", api_secret: "API secret",
+  private_key: "private key", email: "email", card_number: "card number", aadhaar: "Aadhaar",
+  pan: "PAN", phone: "phone", ip_address: "public IP",
+};
+
+function renderGuardrails(inc) {
+  const g = inc.guardrails || { masked: {}, injection_flags: [] };
+  const total = Object.values(g.masked).reduce((a, b) => a + b, 0);
+  const kinds = Object.entries(g.masked).sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `<span class="mask-chip">${esc(MASK_LABEL[k] || k)}${n > 1 ? ` ×${n}` : ""}</span>`).join("");
+  const banner = g.injection_flags.length ? `
+    <div class="injection" role="alert">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l7.5 13H2.5z"/><path d="M10 8v3.5M10 13.6v.1"/></svg>
+      <div>
+        <b>Possible prompt injection in the evidence</b>
+        <p>Something in the logs tried to give the AI instructions. AutoOps treated it as data and did not follow it.
+        Auto-approval is off for this incident, so review the evidence before approving.</p>
+        <code>${esc(g.injection_flags[0])}</code>
+      </div>
+    </div>` : "";
+  return `${banner}
+    <div class="guard">
+      <svg class="guard-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l6 2.2v4.6c0 3.9-2.6 6.9-6 8.2-3.4-1.3-6-4.3-6-8.2V4.7z"/><path d="M7.5 10l1.8 1.8 3.4-3.6"/></svg>
+      <span>${total
+        ? `<b>${total} sensitive value${total === 1 ? "" : "s"} masked</b> before the evidence reached Gemini, the database or this screen`
+        : "No secrets or personal data found in the evidence"}</span>
+      ${kinds ? `<span class="mask-chips">${kinds}</span>` : ""}
+    </div>`;
 }
 
 function renderCause(inc) {
@@ -348,7 +384,8 @@ function renderTimeline(inc) {
     const cls = [
       AI_AGENTS.has(t.agent) ? "agent-step" : "",
       t.action.startsWith("tool_") ? "tool" : "",
-      ["gemini_unavailable", "escalated", "verification_failed", "pipeline_failed"].includes(t.action) ? "warn" : "",
+      ["gemini_unavailable", "escalated", "verification_failed", "pipeline_failed", "injection_detected", "auto_approval_blocked"].includes(t.action) ? "warn" : "",
+      t.agent === "guardrails" ? "guard-step" : "",
     ].join(" ");
     return `<li class="tl ${cls}">
       <span class="tl-t">+${esc(duration(inc.created_at, t.timestamp) || "0.0 s")}</span>
@@ -439,6 +476,7 @@ function renderDetail(force = false) {
         <span class="engine-chip ${isOffline(inc.ai_engine) ? "offline" : ""}">${esc(isOffline(inc.ai_engine) ? "Offline engine" : inc.ai_engine)}</span>
       </div>
     </header>
+    ${renderGuardrails(inc)}
     ${renderRail(inc)}
     ${renderCause(inc)}
     ${renderFix(inc)}
