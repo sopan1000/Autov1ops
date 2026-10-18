@@ -8,7 +8,7 @@ theme: **Future of Work & Enterprise Productivity**.
 | | |
 |---|---|
 | **Live demo** | https://autoops-agent-689241544706.asia-south1.run.app/ui |
-| **Built with** | Gemini (`gemini-3.5-flash-lite`) via Google Agent Development Kit, Cloud Run, Firebase Hosting, Cloud Firestore, Secret Manager, Cloud Build |
+| **Built with** | Gemini (`gemini-3.5-flash-lite`) via Google Agent Development Kit, Cloud Run, Cloud Firestore (Firebase), Secret Manager, Cloud Build |
 | **Tested** | 8 incident types on real Gemini: right decision every time, 5 different actions, 10–26 s each |
 
 ### For judges: try it in one minute
