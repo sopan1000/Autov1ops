@@ -96,6 +96,25 @@ judging (`gcloud run services remove-iam-policy-binding autoops-agent
 --region $REGION --member=allUsers --role=roles/run.invoker`). Don't set
 `AUTOOPS_API_KEY` on a public demo: the dashboard has no way to send it.
 
+## Firebase Hosting in front of Cloud Run (5 minutes)
+
+`firebase.json` serves the whole app through Firebase Hosting: every request
+is rewritten to the `autoops-agent` Cloud Run service in `asia-south1`, so the
+console and API share one origin and nothing else changes. Hosting adds a
+global CDN edge and a `*.web.app` address.
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase projects:addfirebase project-3998711b-eeb2-4078-978   # once per project
+firebase deploy --only hosting
+```
+
+The deploy prints the Hosting URL (normally
+`https://project-3998711b-eeb2-4078-978.web.app`); the console is at `/ui/`.
+Hosting rewrites time out after 60 seconds, well above AutoOps' 10–26 s
+investigations.
+
 ## Full path (stretch): live GKE cluster
 
 Only start this after the fast path works and the video is recorded.

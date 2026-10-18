@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "public": "firebase-hosting/public",
+    "ignore": ["firebase.json", "**/.*"],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": { "serviceId": "autoops-agent", "region": "asia-south1" }
+      }
+    ]
+  }
+}
