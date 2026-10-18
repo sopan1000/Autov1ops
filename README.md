@@ -3,7 +3,7 @@
 Built for the **Google Cloud AI Builder Cup 2026** (JAPAC, by Hack2skill),
 theme: **Future of Work & Enterprise Productivity**.
 
-**Team MindMesh:** Sopan Das (lead), Animesh Nayak, Biswajit Mahapatra, Srishti
+**Team MindMesh:** Sopan Das (lead), Animesh Nayak, Biswajit Mahapatra, Srishti Bhardwaj
 
 | | |
 |---|---|
