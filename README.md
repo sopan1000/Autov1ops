@@ -3,6 +3,23 @@
 Built for the **Google Cloud AI Builder Cup 2026** (JAPAC, by Hack2skill),
 theme: **Future of Work & Enterprise Productivity**.
 
+**Team MindMesh:** Sopan Das (lead), Animesh Nayak, Biswajit Mahapatra, Srishti
+
+| | |
+|---|---|
+| **Live demo** | https://autoops-agent-689241544706.asia-south1.run.app/ui |
+| **Built with** | Gemini (`gemini-3.5-flash-lite`) via Google Agent Development Kit, Cloud Run, Firestore, Secret Manager, Cloud Build |
+| **Tested** | 8 incident types on real Gemini: right decision every time, 5 different actions, 10–26 s each |
+
+### For judges: try it in one minute
+
+1. Open the live demo and click **Simulate incident**.
+2. Pick **API error rate spike**. Within seconds you get the root cause, the log evidence and one proposed fix, with what it ruled out. Click **Approve fix** to see recovery verified and the postmortem written.
+3. Pick **Checkout returning 503s**. A payment vendor is down, nothing safe can be changed, so AutoOps escalates to a human and touches nothing.
+4. Pick **Payment worker crashing**. The logs hide a prompt injection and real-looking secrets. AutoOps flags the injection, blocks auto-approval and masks 8 secrets before Gemini sees them.
+
+The demo runs on realistic fixture data (`MOCK_TOOLS=true`), so every scenario is safe to trigger. The same code path drives a real Kubernetes cluster with `MOCK_TOOLS=false`.
+
 When production breaks, AutoOps does the first hour of on-call work.
 **Gemini agents built on Google's Agent Development Kit (ADK)** investigate
 the incident: they decide which logs, metrics, deploys and cluster events to
